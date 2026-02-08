@@ -18,7 +18,7 @@ Increase conversion from repository visits to actionable user steps.
 
 - CTR on README section links:
   - Quick Start
-  - Feature Tour
+  - Demo Media Policy
   - Release Notes
 - Ratio of users reaching smoke-test command
 - Number of installs from release cycle
@@ -27,8 +27,7 @@ Increase conversion from repository visits to actionable user steps.
 ## Experiment Dimensions
 
 - Badge order/layout
-- GIF ordering
-- 30-second value path placement
+- real demo media placement
 - comparison table depth
 - CTA wording in first 300 lines
 

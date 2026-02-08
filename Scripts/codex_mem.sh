@@ -14,7 +14,6 @@ REDACT_SCREENSHOT_SCRIPT="${ROOT}/Scripts/redact_screenshot.py"
 SOCIAL_PACK_SCRIPT="${ROOT}/Scripts/generate_social_pack.py"
 COMPARE_SEARCH_SCRIPT="${ROOT}/Scripts/compare_search_modes.py"
 SNAPSHOT_DOCS_SCRIPT="${ROOT}/Scripts/snapshot_docs.sh"
-PLACEHOLDER_SCRIPT="${ROOT}/Scripts/generate_placeholder_assets.py"
 
 usage() {
   cat <<'EOF'
@@ -42,7 +41,6 @@ Usage:
   Scripts/codex_mem.sh social-pack --version vX.Y.Z
   Scripts/codex_mem.sh compare-search [--project NAME]
   Scripts/codex_mem.sh snapshot-docs <version>
-  Scripts/codex_mem.sh generate-placeholders
 
 Environment overrides:
   ROOT         Repository root (default: parent of Scripts)
@@ -138,9 +136,6 @@ case "${cmd}" in
     ;;
   snapshot-docs)
     exec "${SNAPSHOT_DOCS_SCRIPT}" "$@"
-    ;;
-  generate-placeholders)
-    exec "${PYTHON_BIN}" "${PLACEHOLDER_SCRIPT}"
     ;;
   help|-h|--help)
     usage

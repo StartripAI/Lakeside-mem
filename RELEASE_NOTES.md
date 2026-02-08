@@ -1,5 +1,27 @@
 # Release Notes
 
+## v0.3.1 - 2026-02-08
+
+### Removed
+- deleted placeholder-only marketing media files from:
+  - `Assets/LaunchKit/gif/export/`
+  - `Assets/LaunchKit/gif/posters/`
+  - `Assets/LaunchKit/screenshots/final/`
+- removed placeholder generator script:
+  - `Scripts/generate_placeholder_assets.py`
+- removed placeholder generation command from shell wrapper:
+  - `Scripts/codex_mem.sh generate-placeholders`
+
+### Changed
+- README no longer embeds synthetic Feature Tour media
+- README now enforces real-media-only policy
+- asset validator no longer fails when media is intentionally absent
+  - it validates files only when real media exists
+
+### Validation
+- passed: `python3 Scripts/validate_assets.py --root . --check-readme --strict`
+- passed: `python3 Scripts/codex_mem_smoketest.py --root .`
+
 ## v0.3.0 - 2026-02-08
 
 ### Added
@@ -17,7 +39,6 @@
   - `Scripts/generate_social_pack.py`
   - `Scripts/compare_search_modes.py`
   - `Scripts/snapshot_docs.sh`
-  - `Scripts/generate_placeholder_assets.py`
 - MCP export tool: `mem_export_session`
 - CLI export command: `export-session`
 - CI asset gate workflow: `.github/workflows/asset-gate.yml`
@@ -65,7 +86,7 @@
 ### Changed
 - README redesigned for GitHub first-screen marketing:
   - badges
-  - feature GIF placeholders
+  - feature GIF support
   - comparison table
   - release notes entry point
 - added launch asset production kit:

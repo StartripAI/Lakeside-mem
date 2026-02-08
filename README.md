@@ -13,7 +13,7 @@ Codex-native persistent memory with progressive retrieval, local viewer UX, and 
 ![Local First](https://img.shields.io/badge/storage-local--first-334155)
 ![License](https://img.shields.io/badge/license-not%20set-lightgrey)
 
-[Quick Start](#quick-start) • [Feature Tour](#feature-tour) • [Comparison](#comparison-table) • [Release Notes](RELEASE_NOTES.md) • [Docs](Documentation/CODEX_MEM.md)
+[Quick Start](#quick-start) • [Comparison](#comparison-table) • [Release Notes](RELEASE_NOTES.md) • [Docs](Documentation/CODEX_MEM.md)
 
 Benchmark source:
 - [`Documentation/benchmarks/marketing_claims_20260208.json`](Documentation/benchmarks/marketing_claims_20260208.json)
@@ -29,25 +29,10 @@ North star:
 - less wasted context tokens
 - more accurate follow-up reasoning from real prior work
 
-## Feature Tour
+## Demo Media Policy
 
-### 1) Memory stream + timeline workflow
-
-![Memory Stream GIF](Assets/LaunchKit/gif/export/gif_01_memory-stream_v1.gif)
-
-### 2) Natural-language mem-search
-
-![mem-search GIF](Assets/LaunchKit/gif/export/gif_02_mem-search_v1.gif)
-
-### 3) Privacy tags + stable/beta mode switch
-
-![Privacy and Mode GIF](Assets/LaunchKit/gif/export/gif_03_privacy-mode_v1.gif)
-
-## 30-Second Value Path
-
-![30s Value Path](Assets/LaunchKit/screenshots/final/value-path-30s.svg)
-
-Install -> mem-search -> timeline -> ask.
+This repository only keeps real product captures.
+No placeholder GIFs or synthetic marketing screenshots are included.
 
 ## Launch Asset Production Kit
 
