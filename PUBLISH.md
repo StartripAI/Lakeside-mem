@@ -3,21 +3,17 @@
 ## Prerequisites
 
 - A GitHub repo: `<YOUR_ORG_OR_USER>/codex-mem`
-- A PAT with repo write permission
+- GitHub CLI authenticated (`gh auth login`) or browser-authenticated git credentials
 
 ## 1) Create repo (choose one)
 
 ### Option A: Web UI
-Create `https://github.com/new` with name `codex-mem` under org/user `<YOUR_ORG_OR_USER>`.
+Create `https://github.com/new` with name `codex-mem` under your org/user account.
 
-### Option B: API (with PAT)
+### Option B: GitHub CLI
 
 ```bash
-export GH_AUTH_TOKEN='<AUTH_CREDENTIAL>'
-curl -sS -X POST https://api.github.com/user/repos \
-  -H "Authorization: Bearer ${GH_AUTH_TOKEN}" \
-  -H "Accept: application/vnd.github+json" \
-  -d '{"name":"codex-mem","private":false}'
+gh repo create codex-mem --public --source=. --remote=origin --push=false
 ```
 
 ## 2) Push current local branch
@@ -29,11 +25,11 @@ git remote set-url origin https://github.com/<YOUR_ORG_OR_USER>/codex-mem.git
 git push -u origin codex/init
 ```
 
-## 3) If HTTPS prompts fail, use PAT in URL once
+## 3) If push auth fails, re-auth via GitHub CLI
 
 ```bash
-cd /ABS/PATH/codex-mem
-git push -u https://<GITHUB_USERNAME>:<AUTH_CREDENTIAL>@github.com/<YOUR_ORG_OR_USER>/codex-mem.git codex/init
+gh auth login
+git push -u origin codex/init
 ```
 
 ## 4) Open PR (optional)

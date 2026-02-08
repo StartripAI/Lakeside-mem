@@ -8,7 +8,6 @@ Codex-native persistent memory with progressive retrieval, local viewer UX, and 
 ![Smoke Test](https://img.shields.io/badge/smoke_test-passing-16a34a)
 ![Local First](https://img.shields.io/badge/storage-local--first-334155)
 ![License](https://img.shields.io/badge/license-not%20set-lightgrey)
-![Stars](https://img.shields.io/github/stars/<YOUR_ORG_OR_USER>/codex-mem?style=social)
 
 [Quick Start](#quick-start) • [Feature Tour](#feature-tour) • [Comparison](#comparison-table) • [Release Notes](RELEASE_NOTES.md) • [Docs](Documentation/CODEX_MEM.md)
 
