@@ -1,6 +1,6 @@
 # codex-mem
 
-Cut context tokens by **99.84%** and reach first memory context in **~60 ms** (median local benchmark).
+Cut context tokens by **99.84%**  (median local benchmark).
 Codex-native persistent memory with progressive retrieval, local viewer UX, and MCP-ready integration.
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)
@@ -36,11 +36,6 @@ North star:
 - less repeated explanation
 - less wasted context tokens
 - more accurate follow-up reasoning from real prior work
-
-## Demo Media Policy
-
-This repository only keeps real product captures.
-No placeholder GIFs or synthetic marketing screenshots are included.
 
 ## Launch Asset Production Kit
 
