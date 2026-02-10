@@ -512,17 +512,25 @@ def repo_seed_files(root: pathlib.Path) -> List[pathlib.Path]:
         "requirements.txt",
     ]
     out: List[pathlib.Path] = []
-    seen: set[str] = set()
+    # Deduplicate case-insensitive aliases (macOS) and hardlinks.
+    seen_inodes: set[tuple[int, int]] = set()
+    seen_paths: set[str] = set()
     for name in candidates:
         p = root / name
         if p.exists() and p.is_file():
             try:
-                key = str(p.resolve())
+                st = p.stat()
+                inode_key = (int(st.st_dev), int(st.st_ino))
             except OSError:
-                key = str(p)
-            if key in seen:
+                inode_key = None
+            if inode_key is not None:
+                if inode_key in seen_inodes:
+                    continue
+                seen_inodes.add(inode_key)
+            path_key = str(p)
+            if path_key in seen_paths:
                 continue
-            seen.add(key)
+            seen_paths.add(path_key)
             out.append(p)
     return out[:6]
 
@@ -1970,6 +1978,7 @@ def cmd_ask(args: argparse.Namespace) -> int:
     meta = fetch_meta(conn)
     vector_dim = int(meta.get("vector_dim", str(DEFAULT_VECTOR_DIM)))
 
+    auto_seeded = seed_repo_baseline(conn, root, args.project, trigger_query=args.question)
     layer1 = blended_search(
         conn,
         query=args.question,
@@ -2025,6 +2034,8 @@ def cmd_ask(args: argparse.Namespace) -> int:
             "session_id": args.session_id,
             "include_private": bool(args.include_private),
         },
+        "auto_seeded": bool(auto_seeded),
+        "db_counts": db_counts(conn),
         "layer1_search": [
             {
                 "id": item.item_id,
