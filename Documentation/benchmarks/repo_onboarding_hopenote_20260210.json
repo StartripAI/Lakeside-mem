@@ -1,0 +1,51 @@
+{
+  "date": "2026-02-10",
+  "benchmark": "repo_knowledge_onboarding_v1",
+  "target": {
+    "label": "HopeNote (private)",
+    "index_dir": ".codex_knowledge_bench",
+    "all_files": true,
+    "extra_ignored_dirs": [
+      ".codex_mem"
+    ]
+  },
+  "index": {
+    "time_ms": 725.291,
+    "summary": {
+      "embedding_provider": "local",
+      "module_count": 26,
+      "avg_chunk_tokens": 210.138,
+      "file_count": 195,
+      "vector_dim": 256,
+      "chunk_count": 1073
+    }
+  },
+  "baseline_full_context": {
+    "files": 195,
+    "chunks": 1073,
+    "chars": 1769247,
+    "tokens_est": 442312,
+    "scan_time_ms": 2.9
+  },
+  "onboarding_prompt": {
+    "question": "Learn this project: north star, architecture, modules, entrypoints, main flow, persistence/output, top risks.",
+    "top_k": 10,
+    "module_limit": 6,
+    "snippet_chars": 1000,
+    "chars": 10997,
+    "tokens_est": 2750,
+    "time_ms": 100.489
+  },
+  "savings": {
+    "context_saving_ratio": 0.9938,
+    "context_saving_percent": 99.38,
+    "context_speedup_x": 0.029
+  },
+  "notes": [
+    "Token estimates use chars/4 heuristic (same as codex-mem memory token estimator).",
+    "Baseline is the full chunk corpus in repo_knowledge index (indexable code/docs only).",
+    "Onboarding prompt is what repo_knowledge prints via `prompt` (top-K chunks + module recall).",
+    "Indexing time is a one-time cost per repo; prompt generation is the per-question cost."
+  ]
+}
+

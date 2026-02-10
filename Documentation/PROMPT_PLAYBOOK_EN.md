@@ -1,17 +1,17 @@
 # Prompt Playbook (English)
 
-Use these copy-ready prompts in any project. They enforce codex-mem's 3-layer retrieval and keep token usage controlled.
+Use these copy-ready prompts in any project. They enforce codex-mem's 3-layer progressive disclosure retrieval and keep context bounded with evidence-first gating.
 
 ## Case 1: Cold Start (learn project, then wait for questions)
 
 ```text
-In this project, run codex-mem onboarding in low-token mode, then switch to Q&A standby.
+In this project, run codex-mem onboarding (progressive retrieval + evidence gating), then switch to Q&A standby.
 
 Constraints:
 - Do not modify code
 - Do not generate any report files
 - Do not print exploration logs (no explored/list/search progress chatter)
-- Stop if total retrieval token estimate exceeds 2500 and report what is missing
+- Stop if total retrieval payload exceeds the working context budget (default: 2500 tokens estimated) and report what is missing
 
 Workflow (strict order):
 1) Confirm command entrypoint (codex_mem.sh or codex_mem.py).
@@ -24,7 +24,7 @@ Output only:
 1. North star goal
 2. Module map
 3. Main flow (entry -> processing -> persistence/output)
-4. Top 3 technical risks with evidence (absolute path + function/module)
+4. Top 3 technical risks with evidence (path + function/module)
 5. What context is loaded vs intentionally not loaded
 
 Then wait for my questions. Do not rebuild full context unless I explicitly say: "rebuild learning context".
