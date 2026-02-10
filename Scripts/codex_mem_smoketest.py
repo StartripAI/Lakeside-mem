@@ -135,8 +135,17 @@ def wait_web_ready(base_url: str, timeout_sec: float = 8.0) -> None:
 
 def run_smoke(root: pathlib.Path) -> Dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="codex_mem_smoke_") as tmp:
+        seed_index_dir = pathlib.Path(tmp) / ".codex_mem_seed"
         index_dir = pathlib.Path(tmp) / ".codex_mem"
         project = "smoketest"
+
+        # Cold-start: DB is empty -> search auto-seeds a minimal repo baseline so 3-stage retrieval won't dead-end.
+        run_cli(root, seed_index_dir, ["init", "--project", project])
+        cold_search = run_cli(root, seed_index_dir, ["search", "学习这个项目", "--project", project, "--limit", "20"])
+        if not cold_search.get("auto_seeded"):
+            raise RuntimeError("cold-start search did not auto-seed baseline")
+        if not cold_search.get("results"):
+            raise RuntimeError("cold-start search returned empty results after seeding")
 
         # CLI flow + runtime config + dual-tag privacy
         run_cli(root, index_dir, ["init", "--project", project])
@@ -246,61 +255,70 @@ def run_smoke(root: pathlib.Path) -> Dict[str, Any]:
             raise RuntimeError("nl-search returned empty results")
 
         # Web viewer API flow
-        port = reserve_port()
-        web_cmd = [
-            sys.executable,
-            str(root / "Scripts" / "codex_mem_web.py"),
-            "--root",
-            str(root),
-            "--index-dir",
-            str(index_dir),
-            "--project-default",
-            project,
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-        ]
-        web_proc = subprocess.Popen(
-            web_cmd,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        base_url = f"http://127.0.0.1:{port}"
+        web_skipped = False
+        stream_public: Dict[str, Any] = {"items": []}
+        stream_private: Dict[str, Any] = {"items": []}
+        sessions_payload: Dict[str, Any] = {"items": []}
         try:
-            wait_web_ready(base_url)
-            api_cfg = http_get_json(f"{base_url}/api/config")
-            if api_cfg.get("config", {}).get("channel") != "beta":
-                raise RuntimeError("web api config mismatch")
-            _ = http_post_json(
-                f"{base_url}/api/config",
-                {"channel": "stable", "viewer_refresh_sec": 4, "beta_endless_mode": False},
+            port = reserve_port()
+        except PermissionError:
+            # Some sandboxes disallow binding to localhost ports. CLI/MCP coverage remains valuable.
+            web_skipped = True
+        else:
+            web_cmd = [
+                sys.executable,
+                str(root / "Scripts" / "codex_mem_web.py"),
+                "--root",
+                str(root),
+                "--index-dir",
+                str(index_dir),
+                "--project-default",
+                project,
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ]
+            web_proc = subprocess.Popen(
+                web_cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
-            stream_public = http_get_json(
-                f"{base_url}/api/stream?project={urllib.parse.quote(project)}&limit=30&include_private=0"
-            )
-            stream_private = http_get_json(
-                f"{base_url}/api/stream?project={urllib.parse.quote(project)}&limit=30&include_private=1"
-            )
-            sessions_payload = http_get_json(
-                f"{base_url}/api/sessions?project={urllib.parse.quote(project)}&limit=10"
-            )
-            web_nl = http_get_json(
-                f"{base_url}/api/nl-search?q={urllib.parse.quote('what bugs were fixed')}&project={urllib.parse.quote(project)}"
-            )
-            if len(stream_private.get("items", [])) < len(stream_public.get("items", [])):
-                raise RuntimeError("web private stream should include at least public stream items")
-            if not sessions_payload.get("items"):
-                raise RuntimeError("web sessions endpoint returned empty result")
-            if not web_nl.get("results"):
-                raise RuntimeError("web nl-search returned empty result")
-        finally:
-            web_proc.terminate()
+            base_url = f"http://127.0.0.1:{port}"
             try:
-                web_proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                web_proc.kill()
+                wait_web_ready(base_url)
+                api_cfg = http_get_json(f"{base_url}/api/config")
+                if api_cfg.get("config", {}).get("channel") != "beta":
+                    raise RuntimeError("web api config mismatch")
+                _ = http_post_json(
+                    f"{base_url}/api/config",
+                    {"channel": "stable", "viewer_refresh_sec": 4, "beta_endless_mode": False},
+                )
+                stream_public = http_get_json(
+                    f"{base_url}/api/stream?project={urllib.parse.quote(project)}&limit=30&include_private=0"
+                )
+                stream_private = http_get_json(
+                    f"{base_url}/api/stream?project={urllib.parse.quote(project)}&limit=30&include_private=1"
+                )
+                sessions_payload = http_get_json(
+                    f"{base_url}/api/sessions?project={urllib.parse.quote(project)}&limit=10"
+                )
+                web_nl = http_get_json(
+                    f"{base_url}/api/nl-search?q={urllib.parse.quote('what bugs were fixed')}&project={urllib.parse.quote(project)}"
+                )
+                if len(stream_private.get("items", [])) < len(stream_public.get("items", [])):
+                    raise RuntimeError("web private stream should include at least public stream items")
+                if not sessions_payload.get("items"):
+                    raise RuntimeError("web sessions endpoint returned empty result")
+                if not web_nl.get("results"):
+                    raise RuntimeError("web nl-search returned empty result")
+            finally:
+                web_proc.terminate()
+                try:
+                    web_proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    web_proc.kill()
 
         # MCP flow
         mcp_cmd = [
@@ -365,6 +383,7 @@ def run_smoke(root: pathlib.Path) -> Dict[str, Any]:
         token_est = nl_search_payload.get("token_estimate_total", 0)
         return {
             "ok": True,
+            "web_skipped": web_skipped,
             "config_after_set": cfg_set.get("config", {}),
             "summary_event_count": end_payload.get("summary", {}).get("event_count", 0),
             "nl_search_result_count": len(nl_search_payload.get("results", [])),

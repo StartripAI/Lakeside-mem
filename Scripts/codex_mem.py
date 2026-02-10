@@ -52,6 +52,16 @@ DEFAULT_REDACTION_RULES = (
         re.compile(r"(?i)bearer\s+[a-z0-9._\-]+"),
         "Bearer [REDACTED]",
     ),
+    (
+        re.compile(r"\b(?:github_pat_[A-Za-z0-9_]+|gh[pousr]_[A-Za-z0-9]+)\b"),
+        "[REDACTED_TOKEN]",
+    ),
+    (
+        re.compile(
+            r"\b(?:sk-[A-Za-z0-9]{10,}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z\\-_]{10,})\b"
+        ),
+        "[REDACTED_TOKEN]",
+    ),
 )
 
 TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,}|[0-9]+|[\u4e00-\u9fff]+")
@@ -429,6 +439,190 @@ def scrub_json_for_share(value: object) -> object:
     if isinstance(value, str):
         return anonymize_text_for_share(value)
     return value
+
+
+def db_counts(conn: sqlite3.Connection) -> Dict[str, int]:
+    out: Dict[str, int] = {}
+    for table in ("sessions", "events", "observations"):
+        try:
+            out[table] = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+        except Exception:
+            out[table] = 0
+    return out
+
+
+def read_file_snippet(path: pathlib.Path, *, max_bytes: int = 64 * 1024) -> str:
+    """
+    Read a privacy-safer snippet for seeding.
+    - decodes as utf-8 with replacement
+    - for large files: head+tail
+    """
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return ""
+    if not data:
+        return ""
+    if len(data) <= max_bytes:
+        return data.decode("utf-8", errors="replace")
+    half = max_bytes // 2
+    head = data[:half].decode("utf-8", errors="replace")
+    tail = data[-half:].decode("utf-8", errors="replace")
+    return f"{head}\n...\n{tail}"
+
+
+def describe_repo_root(root: pathlib.Path, *, max_entries: int = 120) -> str:
+    lines: List[str] = []
+    lines.append("Repo root snapshot (auto-generated):")
+    try:
+        entries = sorted(root.iterdir(), key=lambda p: p.name.lower())
+    except OSError:
+        entries = []
+    for p in entries:
+        name = p.name
+        if not name or name.startswith("."):
+            continue
+        if name in {DEFAULT_INDEX_DIR}:
+            continue
+        kind = "dir" if p.is_dir() else "file"
+        lines.append(f"- {kind}: {name}")
+        if len(lines) >= max_entries:
+            lines.append("- ...<trimmed>")
+            break
+    return "\n".join(lines).strip()
+
+
+def repo_seed_files(root: pathlib.Path) -> List[pathlib.Path]:
+    # Minimal, high-signal, usually safe docs/manifests.
+    candidates = [
+        "readmefirst.md",
+        "README.md",
+        "README.MD",
+        "README",
+        "README.txt",
+        "README.rst",
+        "AGENTS.md",
+        "pyproject.toml",
+        "package.json",
+        "go.mod",
+        "Cargo.toml",
+        "Package.swift",
+        "Podfile",
+        "Gemfile",
+        "requirements.txt",
+    ]
+    out: List[pathlib.Path] = []
+    seen: set[str] = set()
+    for name in candidates:
+        p = root / name
+        if p.exists() and p.is_file():
+            try:
+                key = str(p.resolve())
+            except OSError:
+                key = str(p)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(p)
+    return out[:6]
+
+
+def seed_repo_baseline(conn: sqlite3.Connection, root: pathlib.Path, project: str, trigger_query: str) -> bool:
+    """
+    When the DB is empty, seed a minimal baseline so Stage-1 search can return IDs.
+    This avoids dead-ends where search/timeline/get cannot proceed.
+    """
+    counts = db_counts(conn)
+    if counts.get("events", 0) > 0 or counts.get("observations", 0) > 0:
+        return False
+
+    seed_session_id = f"seed-{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    ensure_session(
+        conn,
+        session_id=seed_session_id,
+        project=project,
+        title="Repo baseline seed (auto)",
+        metadata={"hook": "AutoSeed"},
+    )
+
+    # Add bilingual keywords to improve cold-start hit rate for common onboarding queries.
+    keyword_header = (
+        "Keywords: 学习这个项目 项目 架构 模块 入口 主流程 风险 learn this project project overview architecture modules entrypoint flow risks"
+    )
+
+    seed_event_ids: List[int] = []
+
+    root_snapshot = anonymize_text_for_share(describe_repo_root(root))
+    root_snapshot, compact_meta = compact_tool_output(f"{keyword_header}\n\n{root_snapshot}", 2000)
+    seed_event_ids.append(
+        insert_event(
+            conn,
+            session_id=seed_session_id,
+            project=project,
+            event_kind="repo_seed",
+            role="tool",
+            title="Seed: repo root snapshot",
+            content=root_snapshot,
+            tool_name="repo_seed",
+            file_path=None,
+            tags=["seed", "repo", "learn", "architecture"],
+            metadata={"hook": "AutoSeed", "trigger_query": trigger_query, "compaction": compact_meta},
+        )
+    )
+
+    seeded_files = repo_seed_files(root)
+    for p in seeded_files:
+        snippet = anonymize_text_for_share(read_file_snippet(p, max_bytes=64 * 1024))
+        snippet, compact_meta = compact_tool_output(f"{keyword_header}\n\nFile: {p.name}\n\n{snippet}", 3000)
+        seed_event_ids.append(
+            insert_event(
+                conn,
+                session_id=seed_session_id,
+                project=project,
+                event_kind="repo_seed",
+                role="tool",
+                title=f"Seed: {p.name}",
+                content=snippet,
+                tool_name="repo_seed",
+                file_path=str(p.relative_to(root)),
+                tags=["seed", "repo", "doc"],
+                metadata={"hook": "AutoSeed", "trigger_query": trigger_query, "compaction": compact_meta},
+            )
+        )
+
+    seeded_sources = [f"- {p.name}" for p in seeded_files] if seeded_files else ["- (none)"]
+    obs_body_lines = [
+        "Auto-generated baseline seeded because the memory database was empty.",
+        "",
+        f"Trigger query: {anonymize_text_for_share(trigger_query)}",
+        "",
+        "Seeded sources:",
+        *seeded_sources,
+        "",
+        "What this enables:",
+        "- Stage 1 search can return IDs immediately",
+        "- Stage 2 timeline / Stage 3 get-observations can proceed without dead-ends",
+        "",
+        "Next step to build real memory:",
+        "- start a real session: session-start -> post-tool-use -> session-end",
+    ]
+    insert_observation(
+        conn,
+        session_id=seed_session_id,
+        project=project,
+        observation_type="repo_seed",
+        title=f"Repo baseline (auto) ({seed_session_id})",
+        body="\n".join(obs_body_lines).strip(),
+        source_event_ids=seed_event_ids[:30],
+        metadata={"auto_generated": 1, "hook": "AutoSeed"},
+    )
+
+    conn.execute(
+        "UPDATE sessions SET ended_at = ?, status = 'ended' WHERE session_id = ?",
+        (now_iso(), seed_session_id),
+    )
+    conn.commit()
+    return True
 
 
 def ensure_session(
@@ -1555,6 +1749,7 @@ def cmd_search(args: argparse.Namespace) -> int:
         since = parse_iso_datetime(since).isoformat()
     if until:
         until = parse_iso_datetime(until).isoformat()
+    auto_seeded = seed_repo_baseline(conn, root, args.project, trigger_query=args.query)
     results = blended_search(
         conn,
         query=args.query,
@@ -1577,6 +1772,8 @@ def cmd_search(args: argparse.Namespace) -> int:
             "until": until,
             "include_private": bool(args.include_private),
         },
+        "auto_seeded": bool(auto_seeded),
+        "db_counts": db_counts(conn),
         "results": [
             {
                 "id": item.item_id,
@@ -1604,6 +1801,7 @@ def cmd_nl_search(args: argparse.Namespace) -> int:
     conn = open_db(root, args.index_dir)
     meta = fetch_meta(conn)
     vector_dim = int(meta.get("vector_dim", str(DEFAULT_VECTOR_DIM)))
+    auto_seeded = seed_repo_baseline(conn, root, args.project, trigger_query=args.query)
 
     parsed = parse_natural_query(args.query)
     since = parsed["since"]
@@ -1645,6 +1843,8 @@ def cmd_nl_search(args: argparse.Namespace) -> int:
             "until": until,
             "include_private": bool(args.include_private),
         },
+        "auto_seeded": bool(auto_seeded),
+        "db_counts": db_counts(conn),
         "results": [
             {
                 "id": item.item_id,
