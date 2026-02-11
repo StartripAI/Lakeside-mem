@@ -27,6 +27,7 @@ import sqlite3
 import struct
 import subprocess
 import sys
+import time
 from typing import Dict, Iterable, List, Mapping, Sequence, Tuple
 
 
@@ -321,6 +322,124 @@ def parse_iso_datetime(value: str) -> dt.datetime:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=dt.timezone.utc)
     return parsed.astimezone(dt.timezone.utc)
+
+
+def parse_iso_datetime_maybe(value: str) -> dt.datetime | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        return parse_iso_datetime(raw)
+    except ValueError:
+        return None
+
+
+def read_repo_knowledge_meta(db_path: pathlib.Path) -> Dict[str, str]:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT key, value FROM meta").fetchall()
+        return {str(r["key"]): str(r["value"]) for r in rows}
+    except Exception:
+        return {}
+    finally:
+        conn.close()
+
+
+def git_read_stdout(root: pathlib.Path, args: List[str]) -> str:
+    try:
+        proc = subprocess.run(
+            ["git", *args],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return proc.stdout.strip()
+    except Exception:
+        return ""
+
+
+def repo_knowledge_needs_refresh(root: pathlib.Path, db_path: pathlib.Path) -> Tuple[bool, str, Dict[str, str]]:
+    """
+    Determine whether repo_knowledge index likely needs a rebuild.
+
+    We optimize for correctness on cold start and after upgrades:
+    - if git HEAD changed since index build (committed changes) -> rebuild
+    - if git working tree status changed since last index build -> rebuild
+    - if index meta lacks git_head (older index schema) -> rebuild once
+    """
+    if not db_path.exists():
+        return True, "missing_index", {}
+
+    meta = read_repo_knowledge_meta(db_path)
+    created_at = parse_iso_datetime_maybe(meta.get("created_at_utc", ""))
+
+    if (root / ".git").exists():
+        head_now = git_read_stdout(root, ["rev-parse", "HEAD"])
+        head_index = (meta.get("git_head", "") or "").strip()
+        if head_now and head_index and head_now != head_index:
+            return True, "git_head_changed", meta
+
+        if head_now and not head_index:
+            return True, "missing_git_head_in_meta", meta
+
+        status = git_read_stdout(root, ["status", "--porcelain"])
+        if status:
+            status_hash_now = hashlib.blake2b(status.encode("utf-8"), digest_size=16).hexdigest()
+            status_hash_index = (meta.get("git_status_hash", "") or "").strip()
+            if status_hash_index and status_hash_index == status_hash_now:
+                return False, "up_to_date", meta
+            return True, "git_status_changed", meta
+
+        head_committed_at = parse_iso_datetime_maybe(meta.get("git_head_committed_at", ""))
+        if created_at and head_committed_at and head_committed_at > created_at:
+            return True, "newer_git_commit_than_index", meta
+
+    return False, "up_to_date", meta
+
+
+def ensure_repo_knowledge_index(*, root: pathlib.Path, script: pathlib.Path, index_dir: str) -> Dict[str, object]:
+    """
+    Best-effort index refresh to avoid stale cold-start grounding.
+    """
+    db_path = (root / index_dir / "repo_knowledge.sqlite3").resolve()
+    needs, reason, meta = repo_knowledge_needs_refresh(root, db_path)
+    if not needs:
+        return {"refreshed": False, "reason": reason, "meta": meta}
+
+    cmd = [
+        sys.executable,
+        str(script),
+        "--root",
+        str(root),
+        "--index-dir",
+        index_dir,
+        "index",
+        "--all-files",
+        "--embedding-provider",
+        "local",
+        "--ignore-dir",
+        ".codex_mem",
+    ]
+    start = time.perf_counter()
+    proc = subprocess.run(cmd, cwd=str(root), capture_output=True, text=True, check=False)
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+
+    if proc.returncode != 0:
+        return {
+            "refreshed": False,
+            "reason": reason,
+            "index_time_ms": round(elapsed_ms, 3),
+            "index_exit_code": proc.returncode,
+            "index_stderr": trim_snippet(proc.stderr, 600),
+        }
+
+    return {
+        "refreshed": True,
+        "reason": reason,
+        "index_time_ms": round(elapsed_ms, 3),
+    }
 
 
 def iso_day_range(anchor: dt.datetime) -> Tuple[str, str]:
@@ -1444,6 +1563,8 @@ def run_repo_query(
     script = root / "Scripts" / "repo_knowledge.py"
     if not script.exists():
         return {"warning": "repo_knowledge.py not found"}
+
+    index_refresh = ensure_repo_knowledge_index(root=root, script=script, index_dir=index_dir)
     cmd = [
         sys.executable,
         str(script),
@@ -1476,11 +1597,15 @@ def run_repo_query(
             "warning": "repo_knowledge query failed",
             "exit_code": proc.returncode,
             "stderr": trim_snippet(proc.stderr, 400),
+            "index_refresh": index_refresh,
         }
     try:
-        return json.loads(proc.stdout)
+        payload = json.loads(proc.stdout)
+        if isinstance(payload, dict):
+            payload["index_refresh"] = index_refresh
+        return payload
     except json.JSONDecodeError:
-        return {"warning": "invalid json from repo_knowledge query"}
+        return {"warning": "invalid json from repo_knowledge query", "index_refresh": index_refresh}
 
 
 def cmd_init(args: argparse.Namespace) -> int:

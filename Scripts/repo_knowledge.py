@@ -109,6 +109,36 @@ EXTENSION_TO_LANG = {
 TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,}|[0-9]+|[\u4e00-\u9fff]+")
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+ASCII_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]{1,}")
+
+# Cold-start and cross-language retrieval guardrails:
+# - codex-mem users often ask in Chinese, while code tokens are mostly English.
+# - local embeddings are lexical/IDF based; query expansion improves module recall significantly.
+ONBOARDING_TRIGGER_TERMS = {
+    "learn",
+    "onboard",
+    "architecture",
+    "module",
+    "modules",
+    "module map",
+    "entrypoint",
+    "main flow",
+    "persistence",
+    "database",
+    "storage",
+    "risk",
+    "risks",
+    "北极星",
+    "学习",
+    "架构",
+    "模块",
+    "入口",
+    "主流程",
+    "落库",
+    "持久化",
+    "风险",
+}
 
 LANG_SYMBOL_PATTERNS: Dict[str, Sequence[re.Pattern[str]]] = {
     "swift": (
@@ -215,6 +245,378 @@ def tokenize(text: str) -> List[str]:
             continue
         tokens.append(token.lower())
     return tokens
+
+
+def contains_cjk(text: str) -> bool:
+    return bool(CJK_RE.search(text or ""))
+
+
+def is_onboarding_query(text: str) -> bool:
+    if not text:
+        return False
+    lowered = text.lower()
+    if any(term in text for term in ("学习这个项目", "北极星", "模块地图", "主流程", "落库")):
+        return True
+    for term in ONBOARDING_TRIGGER_TERMS:
+        if term in lowered:
+            return True
+    return False
+
+
+def _ordered_unique(values: Sequence[str]) -> List[str]:
+    seen: set[str] = set()
+    out: List[str] = []
+    for v in values:
+        vv = (v or "").strip()
+        if not vv:
+            continue
+        key = vv.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(vv)
+    return out
+
+
+def retrieval_hints(query: str) -> List[str]:
+    """
+    Lightweight query expansion to bridge non-English prompts and English code tokens.
+
+    Goal: improve *recall* for cold-start onboarding and architecture questions without
+    requiring any external translation/model calls.
+    """
+    q = (query or "").lower()
+    raw = query or ""
+    hints: List[str] = []
+
+    onboarding = is_onboarding_query(raw)
+    if onboarding:
+        hints += [
+            "learn project",
+            "north star goal vision",
+            "architecture module map components",
+            "entrypoint main bootstrap startup",
+            "main flow pipeline dataflow",
+            "persistence database storage",
+            "api routes backend server",
+            "ai service model generation note prism organize",
+            "top risks concurrency performance",
+        ]
+
+    if ("入口" in raw) or ("entrypoint" in q) or ("startup" in q) or ("bootstrap" in q):
+        hints += ["entrypoint", "main", "startup", "bootstrap", "app", "appdelegate", "scenedelegate"]
+    if ("主流程" in raw) or ("流程" in raw) or ("main flow" in q) or ("pipeline" in q):
+        hints += ["main flow", "pipeline", "data flow", "request handler", "controller", "service"]
+    if ("落库" in raw) or ("持久化" in raw) or ("数据库" in raw) or ("persistence" in q) or ("database" in q):
+        hints += [
+            "persistence",
+            "database",
+            "storage",
+            "sqlite",
+            "swiftdata",
+            "coredata",
+            "modelcontext",
+            "save",
+            "migration",
+        ]
+    if ("ai" in q) or ("模型" in raw) or ("生成" in raw) or ("generation" in q):
+        hints += ["ai", "service", "model", "generation", "note", "prism", "organize"]
+    if ("api" in q) or ("backend" in q) or ("后端" in raw) or ("接口" in raw) or ("路由" in raw):
+        hints += ["backend", "api", "routes", "server", "client", "index.ts", "api.ts"]
+    if ("风险" in raw) or ("risk" in q) or ("bug" in q) or ("incident" in q):
+        hints += ["risk", "edge cases", "failure modes", "concurrency", "performance", "security"]
+
+    return _ordered_unique(hints)
+
+
+def onboarding_facet_queries(root: pathlib.Path, question: str) -> List[str]:
+    """
+    On cold start, a single broad query tends to overfit to docs or one module.
+    Use a small fixed set of facet queries to guarantee coverage of:
+    - entrypoint/startup
+    - persistence/storage
+    - AI/generation flows
+    - backend/API surface (if present)
+    """
+    raw = question or ""
+    facets: List[str] = []
+
+    # 1) Entrypoint / startup
+    facets.append("entrypoint main startup bootstrap swiftui @main App AppDelegate SceneDelegate")
+
+    # 2) Persistence / storage
+    if any(term in raw for term in ("落库", "持久化", "数据库")) or any(term in raw.lower() for term in ("persistence", "database", "storage")):
+        facets.append("persistence database storage sqlite swiftdata coredata modelcontext save migration bootstrapper")
+    else:
+        # Still include a lightweight persistence probe for cold-start architecture mapping.
+        facets.append("database persistence storage modelcontext save bootstrapper")
+
+    # 3) AI / generation flows
+    facets.append("ai service model generation note generation prism generation organize streaming delta")
+
+    # 4) Backend/API surface (only if repo looks like it has one)
+    has_backend = (root / "Backend").exists() or (root / "backend").exists() or (root / "api").exists()
+    if has_backend or any(term in raw.lower() for term in ("backend", "api", "route", "server")) or any(term in raw for term in ("后端", "接口", "路由")):
+        facets.append("backend api routes server index.ts api.ts")
+
+    return _ordered_unique(facets)
+
+
+def retrieve_onboarding_chunks(
+    *,
+    root: pathlib.Path,
+    conn: sqlite3.Connection,
+    meta: Mapping[str, str],
+    vector_dim: int,
+    embedding_provider: str,
+    question: str,
+    top_k: int,
+    module_limit: int,
+    alpha: float,
+) -> Tuple[List[Tuple[str, float, str]], List[QueryResult], Dict[str, object]]:
+    facets = onboarding_facet_queries(root, question)
+    # Collect a larger pool, then let `diversify_chunks` choose the final top_k.
+    per_facet_top_k = max(6, int(top_k))
+    per_facet_module_limit = max(12, int(module_limit))
+
+    combined: Dict[int, QueryResult] = {}
+    facet_debug: List[Dict[str, object]] = []
+    first_modules: List[Tuple[str, float, str]] = []
+
+    for facet in facets:
+        q_vec = build_query_vector(
+            conn=conn,
+            query=facet,
+            meta=meta,
+            embedding_provider=embedding_provider,
+            vector_dim=vector_dim,
+        )
+        modules = choose_modules(
+            conn=conn,
+            query=facet,
+            query_vec=q_vec,
+            limit=per_facet_module_limit,
+            vector_dim=vector_dim,
+        )
+        if not first_modules:
+            first_modules = modules
+        module_keys = [item[0] for item in modules]
+        raw = retrieve_chunks(
+            conn=conn,
+            query=facet,
+            top_k=per_facet_top_k,
+            module_keys=module_keys,
+            query_vec=q_vec,
+            vector_dim=vector_dim,
+            alpha=alpha,
+        )
+        for item in raw:
+            prev = combined.get(item.chunk_id)
+            if prev is None or item.score > prev.score:
+                combined[item.chunk_id] = item
+        facet_debug.append(
+            {
+                "facet": facet,
+                "module_count": len(modules),
+                "chunk_count": len(raw),
+                "top_paths": [r.path for r in raw[:5]],
+            }
+        )
+
+    merged = sorted(combined.values(), key=lambda item: item.score, reverse=True)
+
+    def is_noise_path(p: str) -> bool:
+        # Heuristic: if the repo has clear app/backend roots, treat Scripts/ as secondary for onboarding.
+        has_app_like = (root / "App").exists() or (root / "Backend").exists() or (root / "src").exists()
+        if has_app_like and (p.startswith("Scripts/") or p.startswith("scripts/")):
+            return True
+        return False
+
+    merged = [item for item in merged if not is_noise_path(item.path)]
+    selected = diversify_chunks(merged, int(top_k), doc_cap=2)
+
+    def force_include_path_like(pattern: str, *, protect: Sequence[str]) -> None:
+        nonlocal selected
+        if any(pattern.strip("%").lower() in (item.path or "").lower() for item in selected):
+            return
+        row = conn.execute(
+            """
+            SELECT id, path, start_line, end_line, text, token_count, vector, symbol_hint
+            FROM chunks
+            WHERE path LIKE ?
+            ORDER BY start_line ASC
+            LIMIT 1
+            """,
+            (pattern,),
+        ).fetchone()
+        if not row:
+            return
+        forced = QueryResult(
+            chunk_id=int(row["id"]),
+            path=str(row["path"]),
+            start_line=int(row["start_line"]),
+            end_line=int(row["end_line"]),
+            text=str(row["text"]),
+            bm25=0.0,
+            semantic=0.0,
+            score=0.0,
+            symbol_hint=str(row["symbol_hint"]),
+        )
+        if is_noise_path(forced.path):
+            return
+        if any(item.chunk_id == forced.chunk_id or item.path == forced.path for item in selected):
+            return
+
+        protect_set = {p for p in protect if p}
+        if len(selected) >= int(top_k):
+            replacement_idx = None
+            replacement_score = 1e18
+            for idx, item in enumerate(selected):
+                if chunk_category(item.path) in protect_set:
+                    continue
+                if item.score < replacement_score:
+                    replacement_score = item.score
+                    replacement_idx = idx
+            if replacement_idx is None:
+                replacement_idx = len(selected) - 1
+                replacement_score = selected[replacement_idx].score
+            forced.score = float(replacement_score)
+            selected[replacement_idx] = forced
+        else:
+            selected.append(forced)
+
+    q_lower = (question or "").lower()
+    wants_generation = ("生成" in (question or "")) or ("generation" in q_lower) or ("ai" in q_lower) or ("stream" in q_lower)
+    if wants_generation:
+        force_include_path_like("%Generation%", protect=("entrypoint", "persistence"))
+
+    wants_persistence = ("落库" in (question or "")) or ("持久化" in (question or "")) or ("database" in q_lower) or ("persistence" in q_lower)
+    if wants_persistence:
+        force_include_path_like("%Bootstrapper%", protect=("entrypoint", "ai_generation"))
+
+    debug = {"facets": facets, "facet_runs": facet_debug}
+    return first_modules, selected, debug
+
+
+def effective_query_for_retrieval(query: str) -> Tuple[str, Dict[str, object]]:
+    hints = retrieval_hints(query)
+    if not hints:
+        return query, {"expanded": False, "hints": []}
+
+    # If the user prompt is mostly CJK, prefer an English-only retrieval query for the local TF/IDF embedding.
+    # This avoids penalizing coverage/path overlap by including many non-matching CJK tokens.
+    if contains_cjk(query):
+        ascii_terms = _ordered_unique(ASCII_WORD_RE.findall(query or ""))
+        effective = " ".join(hints + ascii_terms).strip()
+        return effective, {"expanded": True, "strategy": "cjk_hints_only", "hints": hints, "ascii_terms": ascii_terms}
+
+    effective = (query or "").strip() + "\n\nHints: " + " ".join(hints)
+    return effective.strip(), {"expanded": True, "strategy": "append_hints", "hints": hints}
+
+
+DOC_EXTENSIONS = {".md", ".rst", ".txt"}
+
+
+def is_doc_path(path: str) -> bool:
+    try:
+        return pathlib.Path(path).suffix.lower() in DOC_EXTENSIONS
+    except Exception:
+        return False
+
+
+def chunk_category(path: str) -> str:
+    lower = (path or "").lower()
+    if is_doc_path(path):
+        return "doc"
+    if lower.endswith("app.swift") or "appdelegate" in lower or "scenedelegate" in lower or lower.endswith("main.swift"):
+        return "entrypoint"
+    if any(tok in lower for tok in ("database", "bootstrapper", "swiftdata", "coredata", "modelcontext", "sqlite", "migration", "store")):
+        return "persistence"
+    if "generation" in lower or "stream" in lower:
+        return "ai_generation"
+    if any(tok in lower for tok in ("/ai/", "ai", "llm", "prompt")):
+        return "ai_service"
+    if any(tok in lower for tok in ("backend", "/routes/", "api.ts", "index.ts", "server.ts")):
+        return "backend"
+    return "code"
+
+
+def diversify_chunks(chunks: Sequence[QueryResult], top_k: int, *, doc_cap: int = 3) -> List[QueryResult]:
+    """
+    Onboarding tends to suffer from repeated hits in the same file/module.
+    Prefer unique paths first, but also cap doc-heavy results so entrypoints/flows don't get crowded out.
+    """
+    if top_k <= 0:
+        return []
+
+    docs: List[QueryResult] = []
+    code: List[QueryResult] = []
+    for item in chunks:
+        (docs if chunk_category(item.path) == "doc" else code).append(item)
+
+    out: List[QueryResult] = []
+    seen_ids: set[int] = set()
+    seen_paths: set[str] = set()
+
+    def emit_from(pool: Sequence[QueryResult], limit: int | None = None) -> None:
+        nonlocal out
+        for item in pool:
+            if item.chunk_id in seen_ids:
+                continue
+            if item.path in seen_paths:
+                continue
+            out.append(item)
+            seen_ids.add(item.chunk_id)
+            seen_paths.add(item.path)
+            if limit is not None and len(out) >= limit:
+                return
+            if len(out) >= top_k:
+                return
+
+    def emit_one(pool: Sequence[QueryResult]) -> bool:
+        for item in pool:
+            if item.chunk_id in seen_ids:
+                continue
+            if item.path in seen_paths:
+                continue
+            out.append(item)
+            seen_ids.add(item.chunk_id)
+            seen_paths.add(item.path)
+            return True
+        return False
+
+    # Keep a small amount of docs for "north star / design intent", then prioritize code.
+    doc_cap = max(0, int(doc_cap))
+    if doc_cap:
+        emit_from(docs, limit=min(top_k, doc_cap))
+
+    # For onboarding, force a minimal coverage pack so entrypoints and core flows don't get crowded out.
+    # This is intentionally heuristic and file-path driven (no extra model calls).
+    by_cat: Dict[str, List[QueryResult]] = {"entrypoint": [], "persistence": [], "ai_generation": [], "backend": [], "ai_service": [], "code": []}
+    for item in code:
+        by_cat.setdefault(chunk_category(item.path), []).append(item)
+
+    required = ["entrypoint", "persistence", "ai_generation"]
+    for cat in required:
+        if len(out) >= top_k:
+            break
+        emit_one(by_cat.get(cat, []))
+
+    # Prefer AI service over generic code when generation flow isn't found.
+    if len(out) < top_k and not any(chunk_category(item.path) == "ai_generation" for item in out):
+        emit_one(by_cat.get("ai_service", []))
+
+    emit_from(code)
+    # If still not enough, fill with remaining (allow duplicates by path last).
+    if len(out) < top_k:
+        for item in chunks:
+            if item.chunk_id in seen_ids:
+                continue
+            out.append(item)
+            seen_ids.add(item.chunk_id)
+            if len(out) >= top_k:
+                break
+    return out
 
 
 def norm_vector(values: List[float]) -> List[float]:
@@ -984,10 +1386,57 @@ def build_index(args: argparse.Namespace) -> int:
                 ),
             )
 
+        git_head = ""
+        git_head_committed_at = ""
+        try:
+            proc = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            git_head = proc.stdout.strip()
+        except Exception:
+            git_head = ""
+        try:
+            proc = subprocess.run(
+                ["git", "show", "-s", "--format=%cI", "HEAD"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            git_head_committed_at = proc.stdout.strip()
+        except Exception:
+            git_head_committed_at = ""
+
+        git_status = ""
+        git_dirty = "0"
+        git_status_hash = ""
+        try:
+            proc = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            git_status = proc.stdout
+        except Exception:
+            git_status = ""
+        if git_status.strip():
+            git_dirty = "1"
+        git_status_hash = hashlib.blake2b(git_status.encode("utf-8"), digest_size=16).hexdigest()
+
         meta_rows = {
             "index_version": INDEX_VERSION,
             "created_at_utc": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
             "root": str(root),
+            "git_head": git_head,
+            "git_head_committed_at": git_head_committed_at,
+            "git_dirty": git_dirty,
+            "git_status_hash": git_status_hash,
             "file_count": str(len(file_rows)),
             "chunk_count": str(num_chunks),
             "avg_chunk_tokens": f"{avg_chunk_tokens:.3f}",
@@ -1305,36 +1754,60 @@ def cmd_query(args: argparse.Namespace) -> int:
     meta = fetch_meta(conn)
     vector_dim = int(meta.get("vector_dim", str(DEFAULT_VECTOR_DIM)))
     embedding_provider = meta.get("embedding_provider", DEFAULT_EMBEDDING_PROVIDER)
-    q_vec = build_query_vector(
-        conn=conn,
-        query=args.question,
-        meta=meta,
-        embedding_provider=embedding_provider,
-        vector_dim=vector_dim,
-    )
+    onboarding = is_onboarding_query(args.question)
+    effective_query, expansion = effective_query_for_retrieval(args.question)
 
-    modules = choose_modules(
-        conn=conn,
-        query=args.question,
-        query_vec=q_vec,
-        limit=args.module_limit,
-        vector_dim=vector_dim,
-    )
-    module_keys = [item[0] for item in modules]
+    effective_module_limit = int(args.module_limit)
+    if onboarding:
+        effective_module_limit = max(effective_module_limit, 12)
 
-    chunks = retrieve_chunks(
-        conn=conn,
-        query=args.question,
-        top_k=args.top_k,
-        module_keys=module_keys,
-        query_vec=q_vec,
-        vector_dim=vector_dim,
-        alpha=args.alpha,
-    )
+    debug: Dict[str, object] = {}
+    if onboarding:
+        modules, chunks, debug = retrieve_onboarding_chunks(
+            root=root,
+            conn=conn,
+            meta=meta,
+            vector_dim=vector_dim,
+            embedding_provider=embedding_provider,
+            question=args.question,
+            top_k=int(args.top_k),
+            module_limit=effective_module_limit,
+            alpha=args.alpha,
+        )
+    else:
+        q_vec = build_query_vector(
+            conn=conn,
+            query=effective_query,
+            meta=meta,
+            embedding_provider=embedding_provider,
+            vector_dim=vector_dim,
+        )
+        modules = choose_modules(
+            conn=conn,
+            query=effective_query,
+            query_vec=q_vec,
+            limit=effective_module_limit,
+            vector_dim=vector_dim,
+        )
+        module_keys = [item[0] for item in modules]
+        chunks = retrieve_chunks(
+            conn=conn,
+            query=effective_query,
+            top_k=int(args.top_k),
+            module_keys=module_keys,
+            query_vec=q_vec,
+            vector_dim=vector_dim,
+            alpha=args.alpha,
+        )
 
     if args.json:
         payload = {
             "question": args.question,
+            "effective_query": effective_query if expansion.get("expanded") else args.question,
+            "query_expansion": expansion,
+            "effective_module_limit": effective_module_limit,
+            "onboarding_mode": onboarding,
+            "onboarding_debug": debug,
             "modules": [
                 {"module": module, "score": round(score, 4), "summary": summary}
                 for module, score, summary in modules
@@ -1388,36 +1861,60 @@ def cmd_prompt(args: argparse.Namespace) -> int:
     meta = fetch_meta(conn)
     vector_dim = int(meta.get("vector_dim", str(DEFAULT_VECTOR_DIM)))
     embedding_provider = meta.get("embedding_provider", DEFAULT_EMBEDDING_PROVIDER)
-    q_vec = build_query_vector(
-        conn=conn,
-        query=args.question,
-        meta=meta,
-        embedding_provider=embedding_provider,
-        vector_dim=vector_dim,
-    )
+    onboarding = is_onboarding_query(args.question)
+    effective_query, expansion = effective_query_for_retrieval(args.question)
 
-    modules = choose_modules(
-        conn=conn,
-        query=args.question,
-        query_vec=q_vec,
-        limit=args.module_limit,
-        vector_dim=vector_dim,
-    )
-    module_keys = [item[0] for item in modules]
-    chunks = retrieve_chunks(
-        conn=conn,
-        query=args.question,
-        top_k=args.top_k,
-        module_keys=module_keys,
-        query_vec=q_vec,
-        vector_dim=vector_dim,
-        alpha=args.alpha,
-    )
+    effective_module_limit = int(args.module_limit)
+    if onboarding:
+        effective_module_limit = max(effective_module_limit, 12)
+
+    debug: Dict[str, object] = {}
+    if onboarding:
+        modules, chunks, debug = retrieve_onboarding_chunks(
+            root=root,
+            conn=conn,
+            meta=meta,
+            vector_dim=vector_dim,
+            embedding_provider=embedding_provider,
+            question=args.question,
+            top_k=int(args.top_k),
+            module_limit=effective_module_limit,
+            alpha=args.alpha,
+        )
+    else:
+        q_vec = build_query_vector(
+            conn=conn,
+            query=effective_query,
+            meta=meta,
+            embedding_provider=embedding_provider,
+            vector_dim=vector_dim,
+        )
+        modules = choose_modules(
+            conn=conn,
+            query=effective_query,
+            query_vec=q_vec,
+            limit=effective_module_limit,
+            vector_dim=vector_dim,
+        )
+        module_keys = [item[0] for item in modules]
+        chunks = retrieve_chunks(
+            conn=conn,
+            query=effective_query,
+            top_k=int(args.top_k),
+            module_keys=module_keys,
+            query_vec=q_vec,
+            vector_dim=vector_dim,
+            alpha=args.alpha,
+        )
 
     print("System: You are assisting with this repository. Use only the provided contexts.")
     print("If you are uncertain, explicitly say what is missing.")
     print()
     print(f"Question: {args.question}")
+    if expansion.get("expanded"):
+        print(f"(retrieval query expanded: {expansion.get('strategy','')})")
+    if onboarding:
+        print("(onboarding mode: facet retrieval enabled)")
     print()
     print("Contexts:")
     for idx, item in enumerate(chunks, start=1):
