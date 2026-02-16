@@ -59,6 +59,11 @@ class ForcedNextInputTests(unittest.TestCase):
             str(depth_targets.get("completion_reporting", "")),
             "percentage_or_range_with_evidence_basis",
         )
+        benchmark = nxt.get("benchmark_targets", {})
+        self.assertEqual(int(benchmark.get("coverage_min_pct", 0)), 90)
+        self.assertEqual(int(benchmark.get("efficiency_gain_min_pct", 0)), 30)
+        self.assertEqual(str(benchmark.get("efficiency_metric", "")), "time_plus_token")
+        self.assertEqual(str(benchmark.get("result_honesty", "")), "report_as_is")
         gate_sections = nxt.get("learning_gate_required_sections", [])
         self.assertIn("north_star", gate_sections)
         self.assertIn("tests", gate_sections)
@@ -70,6 +75,8 @@ class ForcedNextInputTests(unittest.TestCase):
         self.assertIn("MECE 七部分", str(nxt.get("backend_sop_zh", "")))
         self.assertIn("每部分至少 3 条证据", str(nxt.get("backend_sop_zh", "")))
         self.assertIn("先文档后代码与测试", str(nxt.get("backend_sop_zh", "")))
+        self.assertIn("覆盖率 >= 90%", str(nxt.get("backend_sop_zh", "")))
+        self.assertIn("效率提升 >= 30%", str(nxt.get("backend_sop_zh", "")))
         forbidden = nxt.get("forbidden_output_patterns", [])
         self.assertIn("non_executable_prompt_only", forbidden)
         self.assertIn("generic_advice_without_codex_mem_call", forbidden)

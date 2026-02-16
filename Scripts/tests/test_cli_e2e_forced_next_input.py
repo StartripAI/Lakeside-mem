@@ -74,12 +74,17 @@ class CliE2EForcedNextInputTests(unittest.TestCase):
                 str(depth_targets.get("completion_reporting", "")),
                 "percentage_or_range_with_evidence_basis",
             )
+            benchmark = next_input.get("benchmark_targets", {})
+            self.assertEqual(int(benchmark.get("coverage_min_pct", 0)), 90)
+            self.assertEqual(int(benchmark.get("efficiency_gain_min_pct", 0)), 30)
+            self.assertEqual(str(benchmark.get("efficiency_metric", "")), "time_plus_token")
             self.assertIn("run-target", str(next_input.get("callable_prompt_zh", "")))
             self.assertIn("TARGET_ROOT_REQUIRED", str(next_input.get("callable_prompt_zh", "")))
             self.assertNotIn("用户", str(next_input.get("callable_prompt_zh", "")))
             self.assertTrue(bool(next_input.get("backend_rules_locked")))
             self.assertIn("MECE 七部分", str(next_input.get("backend_sop_zh", "")))
             self.assertIn("每部分至少 3 条证据", str(next_input.get("backend_sop_zh", "")))
+            self.assertIn("覆盖率 >= 90%", str(next_input.get("backend_sop_zh", "")))
             forbidden = next_input.get("forbidden_output_patterns", [])
             self.assertIn("non_executable_prompt_only", forbidden)
             self.assertIn("claim_not_executed_without_attempt", forbidden)

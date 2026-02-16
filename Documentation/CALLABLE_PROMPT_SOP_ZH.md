@@ -53,3 +53,9 @@ bash /Users/alfred/projects/codex-mem/Scripts/codex_mem.sh run-target "<TARGET_R
 - P0/P1/P2 action list
 - Next executable command
 - Completion may include percentage/range when backed by section coverage and evidence counts
+
+## Benchmark Targets
+
+- Coverage target: >= 90%
+- Efficiency target: >= 30% gain on combined time + token cost
+- Report results as-is whether outcome is better or worse than target

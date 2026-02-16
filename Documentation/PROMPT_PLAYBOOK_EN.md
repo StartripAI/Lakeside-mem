@@ -59,6 +59,7 @@ Canonical short prompt (ZH):
 
 Backend SOP (hard-locked):
 - `Documentation/CALLABLE_PROMPT_SOP_ZH.md`
+- Benchmark baseline in SOP: coverage >= 90%, efficiency gain >= 30% (time + token combined)
 
 ## Non-Negotiable Rules
 

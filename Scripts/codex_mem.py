@@ -2659,7 +2659,9 @@ def build_forced_next_input(
         "5) 每部分至少 3 条证据，证据格式固定：绝对文件路径 + 关键符号 + 作用说明。\n"
         "6) 任一部分证据不足时，当前轮次内自动补检并补齐，再给结论。\n"
         "7) 结果必须包含 P0/P1/P2 行动清单与下一条可执行命令。\n"
-        "8) 完成度可返回百分比或区间，但必须说明依据（已覆盖章节与证据数量）。"
+        "8) 完成度可返回百分比或区间，但必须说明依据（已覆盖章节与证据数量）。\n"
+        "9) Benchmark 目标：覆盖率 >= 90%，综合效率提升 >= 30%（时间+token）。\n"
+        "10) 结果如实输出，不因结论好坏而改写。"
     )
     callable_prompt_zh = (
         "通过 codex-mem run-target 执行目标项目深度首读并返回结果；自动识别目标项目根目录与项目名，无法识别时返回 TARGET_ROOT_REQUIRED。"
@@ -2713,6 +2715,12 @@ def build_forced_next_input(
                 "must_read_order": ["docs_first", "code_second"],
                 "must_continue_on_gaps": True,
                 "completion_reporting": "percentage_or_range_with_evidence_basis",
+            },
+            "benchmark_targets": {
+                "coverage_min_pct": 90,
+                "efficiency_gain_min_pct": 30,
+                "efficiency_metric": "time_plus_token",
+                "result_honesty": "report_as_is",
             },
             "learning_gate_required_sections": [
                 "north_star",
