@@ -27,12 +27,13 @@ class ForcedNextInputTests(unittest.TestCase):
         resolution = payload.get("target_root_resolution", {})
         self.assertEqual(str(resolution.get("strategy", "")), "auto-detect-absolute-target-root")
         self.assertEqual(str(resolution.get("blocked_output_token", "")), "TARGET_ROOT_REQUIRED")
+        self.assertIn("no_python_fallback", resolution.get("hard_rules", []))
         nxt = payload.get("next_input", {})
         self.assertIn("run-target", str(nxt.get("command_template_zh", "")))
         self.assertIn("/ABS/PATH/TO/OTHER_PROJECT", str(nxt.get("command_template_zh", "")))
         self.assertIn('--project "my-project"', str(nxt.get("command_template_zh", "")))
-        self.assertIn("--root \"/ABS/PATH/TO/OTHER_PROJECT\"", str(nxt.get("command_template_py_zh", "")))
-        self.assertIn("--mapping-debug", str(nxt.get("command_template_py_zh", "")))
+        self.assertNotIn("command_template_py_zh", nxt)
+        self.assertNotIn("command_template_py_en", nxt)
         self.assertIn("TARGET_ROOT_REQUIRED", str(nxt.get("router_prompt_zh", "")))
         self.assertEqual(str(nxt.get("output_if_target_root_missing", "")), "TARGET_ROOT_REQUIRED")
         self.assertEqual(str(nxt.get("output_contract", "")), "single_line_shell_command_only")
@@ -49,6 +50,7 @@ class ForcedNextInputTests(unittest.TestCase):
         self.assertIn("refine_prompt_zh", nxt)
         self.assertIn("entrypoint, persistence", str(nxt.get("refine_prompt_zh", "")))
         self.assertIn("run-target", str(nxt.get("refine_command_template_zh", "")))
+        self.assertNotIn("refine_command_template_py_zh", nxt)
 
 
 if __name__ == "__main__":

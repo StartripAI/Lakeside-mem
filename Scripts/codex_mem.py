@@ -2638,14 +2638,6 @@ def build_forced_next_input(
     cmd_en_one_click = (
         f'bash {shell_path} run-target "{target_root_for_cmd}" --project "{project_for_cmd}" --question "{en_prompt}"'
     )
-    cmd_zh_py = (
-        f'python3 {script_path} --root "{target_root_for_cmd}" ask "{zh_prompt}" '
-        f'--project "{project_for_cmd}" --mapping-debug'
-    )
-    cmd_en_py = (
-        f'python3 {script_path} --root "{target_root_for_cmd}" ask "{en_prompt}" '
-        f'--project "{project_for_cmd}" --mapping-debug'
-    )
     router_prompt_zh = (
         "把用户自然语言请求转换为且仅输出 1 行命令：\n"
         f'bash {shell_path} run-target "<TARGET_ROOT_ABS>" --project "<PROJECT_SLUG>" --question "<TASK>"。\n'
@@ -2668,14 +2660,13 @@ def build_forced_next_input(
                 "must_execute_via_codex_mem_sh_run_target",
                 "must_use_explicit_absolute_target_root",
                 "single_line_command_only",
+                "no_python_fallback",
             ],
         },
         "next_input": {
             "for_other_project_root": target_root_for_cmd,
             "command_template_zh": cmd_zh_one_click,
             "command_template_en": cmd_en_one_click,
-            "command_template_py_zh": cmd_zh_py,
-            "command_template_py_en": cmd_en_py,
             "prompt_template_zh": zh_prompt,
             "prompt_template_en": en_prompt,
             "preferred_entrypoint": "run-target",
@@ -2698,10 +2689,6 @@ def build_forced_next_input(
         out["next_input"]["refine_command_template_zh"] = (
             f'bash {shell_path} run-target "{target_root_for_cmd}" --project "{project_for_cmd}" '
             f'--question "{zh_prompt}{refine_suffix}"'
-        )
-        out["next_input"]["refine_command_template_py_zh"] = (
-            f'python3 {script_path} --root "{target_root_for_cmd}" ask '
-            f'"{zh_prompt}{refine_suffix}" --project "{project_for_cmd}" --mapping-debug'
         )
     out["status"] = "ready" if gate_pass else "needs_refine"
     return out

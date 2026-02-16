@@ -50,8 +50,8 @@ class CliE2EForcedNextInputTests(unittest.TestCase):
             self.assertIn("run-target", str(next_input.get("command_template_zh", "")))
             self.assertIn(expected_root, str(next_input.get("command_template_zh", "")))
             self.assertIn("--project", str(next_input.get("command_template_zh", "")))
-            self.assertIn(f'--root "{expected_root}"', str(next_input.get("command_template_py_zh", "")))
-            self.assertIn("--mapping-debug", str(next_input.get("command_template_py_zh", "")))
+            self.assertNotIn("command_template_py_zh", next_input)
+            self.assertNotIn("command_template_py_en", next_input)
             self.assertEqual(str(next_input.get("output_if_target_root_missing", "")), "TARGET_ROOT_REQUIRED")
             self.assertIn("TARGET_ROOT_REQUIRED", str(next_input.get("router_prompt_zh", "")))
 
@@ -59,6 +59,7 @@ class CliE2EForcedNextInputTests(unittest.TestCase):
             self.assertEqual(str(resolution.get("strategy", "")), "auto-detect-absolute-target-root")
             self.assertEqual(str(resolution.get("detected_source", "")), "runtime_root")
             self.assertEqual(str(resolution.get("detected_target_root", "")), expected_root)
+            self.assertIn("no_python_fallback", resolution.get("hard_rules", []))
 
             # In an isolated temp repo without Scripts/repo_knowledge.py, onboarding coverage should fail,
             # and refine instructions must still be returned.
