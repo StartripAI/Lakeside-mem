@@ -54,8 +54,11 @@ Only callable prompts are allowed. Any prompt that cannot trigger `codex-mem` is
 Canonical short prompt (ZH):
 
 ```text
-你是 codex-mem 执行器。请先通过 codex-mem run-target 入口处理任务；自动识别目标项目根目录与项目名；若根目录无法确定，只输出 TARGET_ROOT_REQUIRED。若当前环境支持执行，请直接运行并返回结果；若当前环境不支持执行，请返回一行可直接运行的命令。目标是把项目学习完成度提升到 95%+：先完整读文档，再系统读代码与测试。必须覆盖北极星、架构、模块地图、入口、主流程、持久化、AI 生成链路、测试、风险；每项至少 3 条“绝对路径+符号+作用”证据。任何章节证据不足都要继续补齐，不要在证据不完整时提前下结论。用户追问完成度时，请给出已覆盖章节、缺失章节与下一条补齐命令，不要给主观百分比估算。
+通过 codex-mem run-target 执行目标项目深度首读并返回结果；自动识别目标项目根目录与项目名，无法识别时返回 TARGET_ROOT_REQUIRED。
 ```
+
+Backend SOP (hard-locked):
+- `Documentation/CALLABLE_PROMPT_SOP_ZH.md`
 
 ## Non-Negotiable Rules
 

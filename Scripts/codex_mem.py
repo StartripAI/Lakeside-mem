@@ -2650,15 +2650,19 @@ def build_forced_next_input(
         "TARGET_ROOT_ABS 识别顺序：用户给的绝对路径 > 当前工作区根目录（且不能是 codex-mem 仓库）。\n"
         "若无法确定 TARGET_ROOT_ABS，输出 TARGET_ROOT_REQUIRED。"
     )
+    backend_sop_zh = (
+        "SOP（写死）：\n"
+        "1) 必须通过 codex-mem run-target 入口执行，不使用其他入口。\n"
+        "2) 目标根目录解析：优先请求中绝对路径，否则当前工作区根目录；若仍不可判定则输出 TARGET_ROOT_REQUIRED。\n"
+        "3) 首读顺序固定为先文档后代码与测试。\n"
+        "4) 输出结构固定为 MECE 七部分：北极星与边界、架构与模块地图、入口与主流程、持久化链路、AI 生成链路、测试现状与质量、关键风险与优先级。\n"
+        "5) 每部分至少 3 条证据，证据格式固定：绝对文件路径 + 关键符号 + 作用说明。\n"
+        "6) 任一部分证据不足时，当前轮次内自动补检并补齐，再给结论。\n"
+        "7) 结果必须包含 P0/P1/P2 行动清单与下一条可执行命令。\n"
+        "8) 完成度表述使用覆盖项与缺失项，不使用主观百分比估算。"
+    )
     callable_prompt_zh = (
-        "你是 codex-mem 执行器。请先通过 codex-mem run-target 入口处理任务：\n"
-        f'bash {shell_path} run-target "<TARGET_ROOT_ABS>" --project "<PROJECT_SLUG>" --question "<TASK>"。\n'
-        "自动识别 TARGET_ROOT_ABS 与 PROJECT_SLUG；若 TARGET_ROOT_ABS 无法确定，只输出 TARGET_ROOT_REQUIRED。\n"
-        "若当前环境支持执行，请直接运行命令并返回结果；若当前环境不支持执行，请返回一行可直接运行的命令。\n"
-        "目标是把项目学习完成度提升到 95%+：先完整读文档，再系统读代码与测试。\n"
-        "必须覆盖北极星、架构、模块地图、入口、主流程、持久化、AI 生成链路、测试、风险；每项至少 3 条“绝对路径+符号+作用”证据。\n"
-        "任何章节证据不足都要继续补齐，不要在证据不完整时提前下结论。\n"
-        "用户追问完成度时，请给出已覆盖章节、缺失章节与下一条补齐命令；不要给主观百分比估算。"
+        "通过 codex-mem run-target 执行目标项目深度首读并返回结果；自动识别目标项目根目录与项目名，无法识别时返回 TARGET_ROOT_REQUIRED。"
     )
 
     out: Dict[str, object] = {
@@ -2687,6 +2691,8 @@ def build_forced_next_input(
             "preferred_entrypoint": "run-target",
             "router_prompt_zh": router_prompt_zh,
             "router_backend_prompt_zh": router_backend_prompt_zh,
+            "backend_sop_zh": backend_sop_zh,
+            "backend_rules_locked": True,
             "callable_prompt_contract": "must_call_codex_mem_only",
             "execution_contract": "must_execute_when_capable",
             "learning_completion_contract": "no_percent_guess_and_gate_based_completion",
