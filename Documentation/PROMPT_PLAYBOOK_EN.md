@@ -1,10 +1,33 @@
-# Prompt Playbook (English)
+# Prompt Playbook (English, Strict SOP)
 
-This playbook is for **short user prompts**. `codex-mem` handles routing and prompt shaping internally, so users do not need long template instructions.
+This playbook is for short user prompts, but with strict operating rules. `codex-mem` handles routing and prompt shaping internally; users should not send long template prompts.
 
-## Default Behavior
+## Scope
 
-`ask` now defaults to `--prompt-style compact` and runs:
+- Applies to `ask` workflows (`onboarding`, `daily_qa`, `bug_triage`, `implementation`).
+- Defines mandatory first-read procedure for project learning.
+- Enforces evidence-grounded output rules.
+
+## Non-Negotiable Rules
+
+1. Keep user prompts short and task-focused.
+2. First-read must run in order:
+   - top-down: goal -> architecture -> module boundaries -> main flow
+   - bottom-up: entrypoint -> key modules -> key functions/data paths
+3. On onboarding, coverage must include:
+   - `entrypoint`
+   - `persistence`
+   - `ai_generation`
+4. Every key conclusion must include evidence:
+   - file path
+   - function/class/symbol
+   - command output summary (when commands were used)
+5. Do not invent KPI or percentage targets.
+   - Numeric claims are allowed only when quoting existing benchmark files.
+
+## Default Ask Behavior
+
+`ask` defaults to `--prompt-style compact` and runs:
 1. prompt-to-profile mapping (`onboarding`, `daily_qa`, `bug_triage`, `implementation`)
 2. memory + repo retrieval
 3. onboarding coverage gate (`entrypoint`, `persistence`, `ai_generation`)
@@ -15,15 +38,54 @@ Useful controls:
 - `--mapping-fallback {auto,off}`
 - `--mapping-debug`
 
+## First-Read SOP (Strict)
+
+### Step 1: Run onboarding ask
+
+```bash
+python3 Scripts/codex_mem.py --root . ask \
+  "learn this project: north star, architecture, module map, entrypoint, persistence, risks" \
+  --project demo
+```
+
+### Step 2: Validate routing and coverage (required for first-read)
+
+```bash
+python3 Scripts/codex_mem.py --root . ask \
+  "learn this project: north star, architecture, module map, entrypoint, persistence, risks" \
+  --project demo --mapping-debug
+```
+
+### Step 3: Produce first-read report in fixed sections
+
+Required sections:
+- north star and boundaries
+- architecture + module map
+- main flow (input -> processing -> persistence -> output)
+- evidence table for `entrypoint` / `persistence` / `ai_generation`
+- top risks + unknowns (explicitly marked)
+
+### Step 4: Completion gate (pass/fail)
+
+First-read is complete only if all are true:
+- `coverage_gate.pass = true`
+- no required section is missing
+- no claim without evidence
+- no invented numeric target
+
+If any item fails, mark output as `INCOMPLETE` and list missing evidence.
+
 ## Minimal User Inputs (Recommended)
 
-Use short task statements. Typical examples:
+Use short task statements:
 - onboarding: `learn this repo architecture and risks`
 - daily Q&A: `why did this flow fail yesterday`
 - bug triage: `triage crash in startup path`
 - implementation: `implement compact renderer with compatibility`
 
-## Case 1: Cold Start (learn project, then standby)
+## Standard Cases
+
+### Case 1: Cold Start (learn project, then standby)
 
 ```bash
 python3 Scripts/codex_mem.py --root . ask \
@@ -31,21 +93,13 @@ python3 Scripts/codex_mem.py --root . ask \
   --project demo
 ```
 
-Optional diagnostics:
-
-```bash
-python3 Scripts/codex_mem.py --root . ask \
-  "learn this project: architecture, entrypoint, persistence, risks" \
-  --project demo --mapping-debug
-```
-
-## Case 2: Daily Q&A (incremental retrieval)
+### Case 2: Daily Q&A (incremental retrieval)
 
 ```bash
 python3 Scripts/codex_mem.py --root . ask "what changed in generation flow" --project demo
 ```
 
-If you want strict local routing only:
+Strict local routing only:
 
 ```bash
 python3 Scripts/codex_mem.py --root . ask \
@@ -53,7 +107,7 @@ python3 Scripts/codex_mem.py --root . ask \
   --project demo --mapping-fallback off
 ```
 
-## Case 3: Bug/Incident Triage
+### Case 3: Bug/Incident Triage
 
 ```bash
 python3 Scripts/codex_mem.py --root . ask \
@@ -61,7 +115,7 @@ python3 Scripts/codex_mem.py --root . ask \
   --project demo
 ```
 
-## Case 4: Implementation Mode
+### Case 4: Implementation Mode
 
 ```bash
 python3 Scripts/codex_mem.py --root . ask \
@@ -69,9 +123,7 @@ python3 Scripts/codex_mem.py --root . ask \
   --project demo
 ```
 
-## Case 5: Legacy Prompt Comparison
-
-Use this only for regression checks:
+### Case 5: Legacy Prompt Comparison (regression only)
 
 ```bash
 python3 Scripts/codex_mem.py --root . ask \
@@ -81,19 +133,19 @@ python3 Scripts/codex_mem.py --root . ask \
 
 ## Reading `ask` Output
 
-Compact mode returns additional decision/quality fields:
+Compact mode returns:
 - `mapping_decision`: route source, confidence, low-confidence flag
 - `coverage_gate`: required/present/missing categories and pass/fail
 - `prompt_plan`: budget allocations and selected evidence
 - `prompt_metrics`: rendered prompt size and budget usage
 
-Compatibility fields still exist:
+Compatibility fields:
 - `suggested_prompt`
 - `token_estimate`
 
 ## Rule of Thumb
 
 - Prefer short prompts.
-- Use `--mapping-debug` only when validating routing behavior.
-- Keep `compact` as default for production usage.
+- Keep `compact` as production default.
+- Use `--mapping-debug` only for routing/coverage validation.
 - Use `legacy` only for A/B or regression checks.

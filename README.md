@@ -7,7 +7,7 @@
 ![Prompt Compaction](https://img.shields.io/badge/compact_prompt-53.28%25_less_tokens-16a34a)
 ![Smoke Test](https://img.shields.io/badge/smoke_test-passing-16a34a)
 
-[Quick Start](#quick-start) • [Prompt Playbook](Documentation/PROMPT_PLAYBOOK_EN.md) • [Architecture](Documentation/ARCHITECTURE.md) • [MCP Tools](Documentation/MCP_TOOLS.md) • [Benchmarks](BENCHMARKS.md) • [Release Notes](RELEASE_NOTES.md)
+[Quick Start](#quick-start) • [Prompt Playbook (EN)](Documentation/PROMPT_PLAYBOOK_EN.md) • [Prompt 玩法规范 (ZH)](Documentation/PROMPT_PLAYBOOK_ZH.md) • [Architecture](Documentation/ARCHITECTURE.md) • [MCP Tools](Documentation/MCP_TOOLS.md) • [Benchmarks](BENCHMARKS.md) • [Release Notes](RELEASE_NOTES.md)
 
 ## Why This Exists
 

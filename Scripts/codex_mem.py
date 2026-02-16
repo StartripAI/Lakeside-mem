@@ -166,14 +166,42 @@ def normalize_scores(raw: Mapping[str, float]) -> Dict[str, float]:
 
 def open_db(root: pathlib.Path, index_dir: str) -> sqlite3.Connection:
     base = root / index_dir
-    base.mkdir(parents=True, exist_ok=True)
+    if base.exists() and not base.is_dir():
+        raise sqlite3.OperationalError(f"index dir is not a directory: {base}")
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise sqlite3.OperationalError(f"failed to prepare index dir {base}: {exc}") from exc
+
     db_path = base / DEFAULT_DB_NAME
-    conn = sqlite3.connect(str(db_path), timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    init_schema(conn)
-    return conn
+    last_exc: sqlite3.OperationalError | None = None
+    for attempt in range(2):
+        try:
+            conn = sqlite3.connect(str(db_path), timeout=30)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            init_schema(conn)
+            return conn
+        except sqlite3.OperationalError as exc:
+            last_exc = exc
+            # Retry once for transient lock contention.
+            if "locked" in str(exc).lower() and attempt == 0:
+                time.sleep(0.2)
+                continue
+            break
+
+    legacy_db_path = base / "memory.db"
+    legacy_hint = (
+        f" Legacy database detected at {legacy_db_path}; current default is {db_path.name}."
+        if legacy_db_path.exists()
+        else ""
+    )
+    detail = str(last_exc) if last_exc else "unknown sqlite operational error"
+    raise sqlite3.OperationalError(
+        f"failed to open sqlite database at {db_path}: {detail}.{legacy_hint} "
+        "Try: `bash Scripts/codex_mem.sh init --project demo` and retry."
+    ) from last_exc
 
 
 def init_schema(conn: sqlite3.Connection) -> None:
@@ -2087,6 +2115,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
         print(json.dumps({"stage": "timeline", "error": str(exc), "id": args.id}, ensure_ascii=False, indent=2))
         return 1
     payload["stage"] = "timeline"
+    payload["filters"] = {"project": args.project}
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
 
@@ -2115,6 +2144,7 @@ def cmd_get_observations(args: argparse.Namespace) -> int:
         details.append(detail)
     payload = {
         "stage": "get_observations",
+        "filters": {"project": args.project},
         "count": len(details),
         "skipped_ids": skipped_ids,
         "items": details,
@@ -2157,19 +2187,171 @@ def build_fused_prompt(
     return "\n".join(lines).strip()
 
 
-def infer_repo_category(path: str) -> str:
-    lower = (path or "").lower()
-    if not lower:
-        return "code"
-    if lower.endswith("app.swift") or lower.endswith("main.swift") or "appdelegate" in lower or "scenedelegate" in lower:
-        return "entrypoint"
-    if any(tok in lower for tok in ("database", "bootstrapper", "swiftdata", "coredata", "modelcontext", "sqlite", "migration", "store")):
-        return "persistence"
-    if any(tok in lower for tok in ("generation", "stream", "organize", "prism", "ai", "prompt")):
-        return "ai_generation"
-    if any(tok in lower for tok in ("backend", "/routes/", "api.ts", "index.ts", "server.ts")):
-        return "backend"
+_REPO_CATEGORY_ORDER = ("entrypoint", "persistence", "ai_generation", "backend", "code")
+
+
+def _match_any(text: str, terms: Sequence[str]) -> bool:
+    if not text:
+        return False
+    return any(term in text for term in terms)
+
+
+def infer_repo_categories(
+    path: str,
+    *,
+    symbol_hint: str = "",
+    snippet: str = "",
+    existing_category: str = "",
+) -> List[str]:
+    lower_path = (path or "").lower()
+    lower_symbol = (symbol_hint or "").lower()
+    lower_snippet = (snippet or "").lower()
+    allow_snippet_signals = not lower_path.endswith((".md", ".markdown", ".rst", ".txt"))
+
+    categories = set()
+    existing = str(existing_category or "").strip().lower()
+    if existing in {"entrypoint", "persistence", "ai_generation", "backend"}:
+        categories.add(existing)
+
+    if _match_any(
+        lower_path,
+        (
+            "app.swift",
+            "main.swift",
+            "appdelegate",
+            "scenedelegate",
+            "entrypoint",
+            "startup",
+            "bootstrap",
+            "/main.py",
+            "/cli.py",
+        ),
+    ) or _match_any(
+        lower_symbol,
+        ("main", "run_cli", "parse_args", "build_parser", "appdelegate", "scenedelegate", "bootstrap", "entrypoint"),
+    ) or (
+        allow_snippet_signals
+        and _match_any(
+        lower_snippet,
+        (
+            "entrypoint",
+            "startup",
+            "bootstrap",
+            "if __name__ == \"__main__\"",
+            "argparse",
+            "sub.add_parser",
+            "appdelegate",
+            "scenedelegate",
+        ),
+        )
+    ):
+        categories.add("entrypoint")
+
+    if _match_any(
+        lower_path,
+        ("database", "bootstrapper", "swiftdata", "coredata", "modelcontext", "sqlite", "migration", "store", "persistence"),
+    ) or _match_any(
+        lower_symbol,
+        ("save", "load", "migrate", "bootstrap", "modelcontext", "sqlite", "storage", "persistence"),
+    ) or (
+        allow_snippet_signals
+        and _match_any(
+        lower_snippet,
+        (
+            "persistence",
+            "database",
+            "storage",
+            "sqlite",
+            "swiftdata",
+            "coredata",
+            "modelcontext",
+            "migration",
+            "save(",
+            "commit(",
+        ),
+        )
+    ):
+        categories.add("persistence")
+
+    if _match_any(
+        lower_path,
+        ("generation", "stream", "organize", "prism", "ai_", "/ai/", "llm", "model"),
+    ) or _match_any(
+        lower_symbol,
+        ("generate", "generation", "stream", "organize", "prism", "ai", "model"),
+    ) or (
+        allow_snippet_signals
+        and _match_any(
+        lower_snippet,
+        (
+            "ai generation",
+            "generation flow",
+            "streaming",
+            "prism",
+            "organize",
+            "model output",
+            "prompt plan",
+            "token budget",
+        ),
+        )
+    ):
+        categories.add("ai_generation")
+
+    if _match_any(
+        lower_path,
+        ("backend", "/routes/", "api.ts", "index.ts", "server.ts", "/api/", "controller", "handler"),
+    ) or _match_any(
+        lower_symbol,
+        ("route", "handler", "controller", "server", "api"),
+    ) or (
+        allow_snippet_signals
+        and _match_any(
+        lower_snippet,
+        ("http", "route", "endpoint", "request", "response", "api", "server"),
+        )
+    ):
+        categories.add("backend")
+
+    categories.add("code")
+    return [cat for cat in _REPO_CATEGORY_ORDER if cat in categories]
+
+
+def infer_repo_category(path: str, *, symbol_hint: str = "", snippet: str = "", existing_category: str = "") -> str:
+    categories = infer_repo_categories(
+        path,
+        symbol_hint=symbol_hint,
+        snippet=snippet,
+        existing_category=existing_category,
+    )
+    for cat in categories:
+        if cat != "code":
+            return cat
     return "code"
+
+
+def _chunk_category_set(chunk: Mapping[str, object]) -> List[str]:
+    raw = chunk.get("categories")
+    if isinstance(raw, list):
+        normalized = [str(v).strip() for v in raw if str(v).strip()]
+        if normalized:
+            uniq = []
+            seen = set()
+            for value in normalized:
+                if value in seen:
+                    continue
+                seen.add(value)
+                uniq.append(value)
+            return uniq
+    cat = str(chunk.get("category", "code")).strip() or "code"
+    return [cat]
+
+
+def _present_repo_categories(chunks: Sequence[Mapping[str, object]]) -> List[str]:
+    present = set()
+    for item in chunks:
+        for cat in _chunk_category_set(item):
+            present.add(cat)
+    return sorted(present)
 
 
 def _extract_repo_chunks(payload: Mapping[str, object] | object) -> List[Dict[str, object]]:
@@ -2183,7 +2365,23 @@ def _extract_repo_chunks(payload: Mapping[str, object] | object) -> List[Dict[st
         if not isinstance(chunk, Mapping):
             continue
         row = dict(chunk)
-        row["category"] = infer_repo_category(str(row.get("path", "")))
+        path = str(row.get("path", ""))
+        symbol_hint = str(row.get("symbol_hint", ""))
+        snippet = str(row.get("snippet", "") or row.get("text", ""))
+        existing_category = str(row.get("category", ""))
+        categories = infer_repo_categories(
+            path,
+            symbol_hint=symbol_hint,
+            snippet=snippet,
+            existing_category=existing_category,
+        )
+        row["categories"] = categories
+        row["category"] = infer_repo_category(
+            path,
+            symbol_hint=symbol_hint,
+            snippet=snippet,
+            existing_category=existing_category,
+        )
         out.append(row)
     return out
 
@@ -2200,7 +2398,22 @@ def _merge_repo_chunks(base: Sequence[Mapping[str, object]], incoming: Sequence[
             continue
         seen.add(key)
         row = dict(item)
-        row["category"] = infer_repo_category(path)
+        symbol_hint = str(row.get("symbol_hint", ""))
+        snippet = str(row.get("snippet", "") or row.get("text", ""))
+        existing_category = str(row.get("category", ""))
+        categories = infer_repo_categories(
+            path,
+            symbol_hint=symbol_hint,
+            snippet=snippet,
+            existing_category=existing_category,
+        )
+        row["categories"] = categories
+        row["category"] = infer_repo_category(
+            path,
+            symbol_hint=symbol_hint,
+            snippet=snippet,
+            existing_category=existing_category,
+        )
         merged.append(row)
         if len(merged) >= max(1, limit):
             break
@@ -2220,12 +2433,13 @@ def ensure_repo_coverage(
 ) -> Tuple[Dict[str, object], Dict[str, object]]:
     payload = dict(repo_payload) if isinstance(repo_payload, Mapping) else {}
     chunks = _extract_repo_chunks(payload)
+    payload["chunks"] = chunks
 
     required: List[str] = []
     if profile_name == "onboarding":
         required = ["entrypoint", "persistence", "ai_generation"]
 
-    present = sorted({str(item.get("category", "code")) for item in chunks})
+    present = _present_repo_categories(chunks)
     missing = [cat for cat in required if cat not in present]
     second_pass_runs: List[Dict[str, object]] = []
 
@@ -2262,7 +2476,7 @@ def ensure_repo_coverage(
         chunks = _merge_repo_chunks(chunks, extra_chunks, max(8, code_top_k + len(extra_chunks)))
         payload["chunks"] = chunks
 
-    present = sorted({str(item.get("category", "code")) for item in chunks})
+    present = _present_repo_categories(chunks)
     missing = [cat for cat in required if cat not in present]
     gate = {
         "profile": profile_name,
@@ -2273,6 +2487,82 @@ def ensure_repo_coverage(
         "second_pass_runs": second_pass_runs,
     }
     return payload, gate
+
+
+def _profile_prompt_template(profile_name: str) -> Tuple[str, str]:
+    profile = (profile_name or "").strip().lower()
+    if profile == "onboarding":
+        zh = (
+            "学习这个项目：北极星、架构、模块地图、入口、主流程、持久化、AI 生成链路、风险。"
+        )
+        en = (
+            "learn this project: north star, architecture, module map, entrypoint, main flow, "
+            "persistence, ai generation, risks"
+        )
+        return zh, en
+    if profile == "bug_triage":
+        zh = "排查这个回归：复现路径、根因链路、最小风险修复方案、验证清单。"
+        en = "triage this regression: repro path, root cause chain, minimal-risk fix, verification checklist"
+        return zh, en
+    if profile == "implementation":
+        zh = "实现这个需求：最小改动、兼容性边界、验证步骤、风险点。"
+        en = "implement this task: minimal patch, compatibility boundaries, validation steps, risks"
+        return zh, en
+    zh = "回答这个问题：先给结论，再给证据路径和关键命令结果。"
+    en = "answer this question: conclusion first, then evidence paths and key command outputs"
+    return zh, en
+
+
+def build_forced_next_input(
+    *,
+    root: pathlib.Path,
+    profile_name: str,
+    coverage_gate: Mapping[str, object],
+) -> Dict[str, object]:
+    script_path = pathlib.Path(__file__).resolve()
+    root_abs = str(root.resolve())
+    zh_prompt, en_prompt = _profile_prompt_template(profile_name)
+    required_fields = ["mapping_decision", "coverage_gate", "prompt_plan", "prompt_metrics"]
+
+    cmd_zh = (
+        f'python3 {script_path} --root "/ABS/PATH/TO/OTHER_PROJECT" ask "{zh_prompt}" '
+        '--project my-project --mapping-debug'
+    )
+    cmd_en = (
+        f'python3 {script_path} --root "/ABS/PATH/TO/OTHER_PROJECT" ask "{en_prompt}" '
+        '--project my-project --mapping-debug'
+    )
+
+    out: Dict[str, object] = {
+        "mandatory": True,
+        "why": "Always provide the next executable input for another project; do not return generic guidance only.",
+        "required_output_fields": required_fields,
+        "current_runtime_root": root_abs,
+        "next_input": {
+            "for_other_project_root": "/ABS/PATH/TO/OTHER_PROJECT",
+            "command_template_zh": cmd_zh,
+            "command_template_en": cmd_en,
+            "prompt_template_zh": zh_prompt,
+            "prompt_template_en": en_prompt,
+        },
+        "acceptance_gate": {
+            "onboarding_requires": ["mapping_decision.profile=onboarding", "coverage_gate.pass=true"],
+            "fallback_requires": ["mapping_decision.confidence>=0.55"],
+        },
+    }
+
+    gate_pass = bool(coverage_gate.get("pass", True))
+    missing = coverage_gate.get("missing_categories", [])
+    missing_text = ", ".join(str(v) for v in missing) if isinstance(missing, list) and missing else ""
+    if missing_text:
+        refine_suffix = f"\n\n只补齐这些缺失证据类别：{missing_text}"
+        out["next_input"]["refine_prompt_zh"] = f"{zh_prompt}{refine_suffix}"
+        out["next_input"]["refine_command_template_zh"] = (
+            f'python3 {script_path} --root "/ABS/PATH/TO/OTHER_PROJECT" ask '
+            f'"{zh_prompt}{refine_suffix}" --project my-project --mapping-debug'
+        )
+    out["status"] = "ready" if gate_pass else "needs_refine"
+    return out
 
 
 def cmd_ask(args: argparse.Namespace) -> int:
@@ -2447,7 +2737,21 @@ def cmd_ask(args: argparse.Namespace) -> int:
         "prompt_plan": prompt_plan,
         "prompt_metrics": prompt_metrics,
         "suggested_prompt": prompt,
+        "forced_next_input": build_forced_next_input(
+            root=root,
+            profile_name=profile.name,
+            coverage_gate=coverage_gate,
+        ),
     }
+    if not bool(coverage_gate.get("pass", True)):
+        missing = coverage_gate.get("missing_categories", [])
+        missing_text = ", ".join(str(v) for v in missing) if isinstance(missing, list) and missing else "unknown"
+        payload["recommended_next_action"] = {
+            "type": "ask_refine",
+            "reason": f"coverage_gate_missing:{missing_text}",
+            "note": "Prefer another targeted ask query; avoid looping mem-search/timeline on empty memory.",
+            "example_question": f"{args.question}\n\n只补齐这些缺失证据类别：{missing_text}",
+        }
     if args.prompt_only:
         print(prompt)
         return 0
@@ -2776,6 +3080,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_mem_search.set_defaults(func=cmd_nl_search)
 
     p_timeline = sub.add_parser("timeline", help="Stage 2 retrieval: temporal neighborhood.")
+    add_project_arg(p_timeline)
     p_timeline.add_argument("id", help="E<ID> or O<ID>")
     p_timeline.add_argument("--before", type=int, default=5)
     p_timeline.add_argument("--after", type=int, default=5)
@@ -2784,6 +3089,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_timeline.set_defaults(func=cmd_timeline)
 
     p_get = sub.add_parser("get-observations", help="Stage 3 retrieval: full details by IDs.")
+    add_project_arg(p_get)
     p_get.add_argument("ids", nargs="+", help="List of E<ID>/O<ID>")
     p_get.add_argument("--compact", action="store_true")
     p_get.add_argument("--include-private", action="store_true")
@@ -2814,7 +3120,18 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    return int(args.func(args))
+    try:
+        return int(args.func(args))
+    except sqlite3.OperationalError as exc:
+        payload = {
+            "ok": False,
+            "stage": str(getattr(args, "command", "unknown")),
+            "error": "sqlite_operational_error",
+            "message": str(exc),
+            "hint": "Run `bash Scripts/codex_mem.sh init --project demo`, then retry.",
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 1
 
 
 if __name__ == "__main__":
