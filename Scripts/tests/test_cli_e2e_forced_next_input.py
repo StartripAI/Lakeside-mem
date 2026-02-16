@@ -54,11 +54,19 @@ class CliE2EForcedNextInputTests(unittest.TestCase):
             self.assertNotIn("command_template_py_en", next_input)
             self.assertEqual(str(next_input.get("callable_prompt_contract", "")), "must_call_codex_mem_only")
             self.assertEqual(str(next_input.get("execution_contract", "")), "must_execute_when_capable")
+            self.assertEqual(
+                str(next_input.get("learning_completion_contract", "")),
+                "no_percent_guess_and_gate_based_completion",
+            )
+            self.assertEqual(str(next_input.get("learning_complete_token", "")), "LEARNING_COMPLETE")
+            self.assertEqual(str(next_input.get("learning_incomplete_token", "")), "INCOMPLETE")
             self.assertIn("run-target", str(next_input.get("callable_prompt_zh", "")))
             self.assertIn("必须立即执行", str(next_input.get("callable_prompt_zh", "")))
+            self.assertIn("禁止输出完成度百分比估算", str(next_input.get("callable_prompt_zh", "")))
             forbidden = next_input.get("forbidden_output_patterns", [])
             self.assertIn("non_executable_prompt_only", forbidden)
             self.assertIn("claim_not_executed_without_attempt", forbidden)
+            self.assertIn("completion_percentage_guess", forbidden)
             self.assertEqual(str(next_input.get("output_if_target_root_missing", "")), "TARGET_ROOT_REQUIRED")
             self.assertIn("TARGET_ROOT_REQUIRED", str(next_input.get("router_prompt_zh", "")))
 
