@@ -2651,15 +2651,14 @@ def build_forced_next_input(
         "若无法确定 TARGET_ROOT_ABS，输出 TARGET_ROOT_REQUIRED。"
     )
     callable_prompt_zh = (
-        "你是 codex-mem 执行器。必须先调用 codex-mem run-target 入口：\n"
+        "你是 codex-mem 执行器。请先通过 codex-mem run-target 入口处理任务：\n"
         f'bash {shell_path} run-target "<TARGET_ROOT_ABS>" --project "<PROJECT_SLUG>" --question "<TASK>"。\n'
         "自动识别 TARGET_ROOT_ABS 与 PROJECT_SLUG；若 TARGET_ROOT_ABS 无法确定，只输出 TARGET_ROOT_REQUIRED。\n"
-        "若有终端执行能力，必须立即执行该命令并返回执行结果与学习结论；禁止只说“未执行”。\n"
+        "若当前环境支持执行，请直接运行命令并返回结果；若当前环境不支持执行，请返回一行可直接运行的命令。\n"
         "目标是把项目学习完成度提升到 95%+：先完整读文档，再系统读代码与测试。\n"
         "必须覆盖北极星、架构、模块地图、入口、主流程、持久化、AI 生成链路、测试、风险；每项至少 3 条“绝对路径+符号+作用”证据。\n"
-        "任何章节证据不足都要继续自动追读并补齐，直到通过门槛；禁止一次浅层扫描后直接下结论。\n"
-        "用户追问完成度时，给出已覆盖章节、缺失章节、下一条补齐命令；禁止百分比拍脑袋估算。\n"
-        "若无执行能力，仅输出该命令一行，禁止其他解释文本。"
+        "任何章节证据不足都要继续补齐，不要在证据不完整时提前下结论。\n"
+        "用户追问完成度时，请给出已覆盖章节、缺失章节与下一条补齐命令；不要给主观百分比估算。"
     )
 
     out: Dict[str, object] = {
