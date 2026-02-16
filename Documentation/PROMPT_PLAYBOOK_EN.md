@@ -25,6 +25,42 @@ This playbook is for short user prompts, but with strict operating rules. `codex
 5. Do not invent KPI or percentage targets.
    - Numeric claims are allowed only when quoting existing benchmark files.
 
+## Mandatory Response Contract (No Intro Text)
+
+This is a hard requirement for project-learning and optimization runs.
+
+### Forbidden Output
+
+- Introductory/meta lines such as:
+  - "Summary"
+  - "Goal is..."
+  - "A/B/C sections"
+  - any restatement of the user request
+- Generic advice without repository evidence
+- Decorative headings before required content
+
+### Required Output Order
+
+Output must be returned in exactly this order:
+1. Up to 10 factual lines, no title/header line.
+2. Optimization actions grouped as `P0`, `P1`, `P2` (each item must include target change + risk).
+3. Validation fields (verbatim keys must appear):
+   - `mapping_decision`
+   - `coverage_gate`
+   - `prompt_plan`
+   - `prompt_metrics`
+   - `forced_next_input`
+4. One fully executable next `ask` command.
+
+### Failure Contract
+
+If `coverage_gate.pass` is `false`, return only:
+1. `INCOMPLETE`
+2. missing category list
+3. one full `ask` command that includes "only fill missing categories"
+
+No additional explanation is allowed in failure mode.
+
 ## Default Ask Behavior
 
 `ask` defaults to `--prompt-style compact` and runs:
