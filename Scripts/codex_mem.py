@@ -2639,11 +2639,16 @@ def build_forced_next_input(
         f'bash {shell_path} run-target "{target_root_for_cmd}" --project "{project_for_cmd}" --question "{en_prompt}"'
     )
     router_prompt_zh = (
-        "把用户自然语言请求转换为且仅输出 1 行命令：\n"
-        f'bash {shell_path} run-target "<TARGET_ROOT_ABS>" --project "<PROJECT_SLUG>" --question "<TASK>"。\n'
-        "TARGET_ROOT_ABS 优先取用户给的绝对路径，否则取当前工作区根目录（且不能是 codex-mem 仓库）。\n"
-        "无法确定 TARGET_ROOT_ABS 时只输出 TARGET_ROOT_REQUIRED。\n"
-        "禁止解释、标题、代码块或任何额外文本。"
+        "请把用户需求转成下一条可执行输入，输出保持简洁自然。\n"
+        "自动识别目标项目根目录与项目名，并生成对应任务指令。\n"
+        "如果目标根目录无法确定，只输出 TARGET_ROOT_REQUIRED。\n"
+        "禁止输出与执行无关的解释文本。"
+    )
+    router_backend_prompt_zh = (
+        "后台执行约束：只允许使用 codex-mem 标准入口命令。\n"
+        f'命令模板：bash {shell_path} run-target "<TARGET_ROOT_ABS>" --project "<PROJECT_SLUG>" --question "<TASK>"。\n'
+        "TARGET_ROOT_ABS 识别顺序：用户给的绝对路径 > 当前工作区根目录（且不能是 codex-mem 仓库）。\n"
+        "若无法确定 TARGET_ROOT_ABS，输出 TARGET_ROOT_REQUIRED。"
     )
 
     out: Dict[str, object] = {
@@ -2671,6 +2676,7 @@ def build_forced_next_input(
             "prompt_template_en": en_prompt,
             "preferred_entrypoint": "run-target",
             "router_prompt_zh": router_prompt_zh,
+            "router_backend_prompt_zh": router_backend_prompt_zh,
             "output_contract": "single_line_shell_command_only",
             "output_if_target_root_missing": "TARGET_ROOT_REQUIRED",
         },
