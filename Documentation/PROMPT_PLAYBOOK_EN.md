@@ -8,6 +8,36 @@ This playbook is for short user prompts, but with strict operating rules. `codex
 - Defines mandatory first-read procedure for project learning.
 - Enforces evidence-grounded output rules.
 
+## Single North Star (Hard Requirement)
+
+The only success criterion is:
+- run a target repository through `codex-mem` automation
+- reduce context/memory waste without losing evidence quality
+
+No workflow is considered valid if it does not run through the `codex-mem` entrypoint with an explicit target root.
+
+## Mandatory Execution Entrypoint (Hard Requirement)
+
+Always execute via `codex_mem.py` with both:
+- `--root "/ABS/PATH/TO/TARGET_PROJECT"`
+- `--project <target_project_name>`
+
+Canonical command:
+
+```bash
+python3 /ABS/PATH/TO/codex-mem/Scripts/codex_mem.py \
+  --root "/ABS/PATH/TO/TARGET_PROJECT" \
+  ask "learn this project: north star, architecture, module map, entrypoint, main flow, persistence, ai generation, risks." \
+  --project target \
+  --mapping-debug
+```
+
+Forbidden execution patterns:
+- running `ask` without `--root`
+- using `--root .` when `.` is not the target repository
+- running without `--project`
+- returning advice without an executable next command
+
 ## Non-Negotiable Rules
 
 1. Keep user prompts short and task-focused.
@@ -79,17 +109,19 @@ Useful controls:
 ### Step 1: Run onboarding ask
 
 ```bash
-python3 Scripts/codex_mem.py --root . ask \
-  "learn this project: north star, architecture, module map, entrypoint, persistence, risks" \
-  --project demo
+python3 /ABS/PATH/TO/codex-mem/Scripts/codex_mem.py \
+  --root "/ABS/PATH/TO/TARGET_PROJECT" \
+  ask "learn this project: north star, architecture, module map, entrypoint, persistence, risks" \
+  --project target
 ```
 
 ### Step 2: Validate routing and coverage (required for first-read)
 
 ```bash
-python3 Scripts/codex_mem.py --root . ask \
-  "learn this project: north star, architecture, module map, entrypoint, persistence, risks" \
-  --project demo --mapping-debug
+python3 /ABS/PATH/TO/codex-mem/Scripts/codex_mem.py \
+  --root "/ABS/PATH/TO/TARGET_PROJECT" \
+  ask "learn this project: north star, architecture, module map, entrypoint, persistence, risks" \
+  --project target --mapping-debug
 ```
 
 ### Step 3: Produce first-read report in fixed sections
@@ -124,47 +156,60 @@ Use short task statements:
 ### Case 1: Cold Start (learn project, then standby)
 
 ```bash
-python3 Scripts/codex_mem.py --root . ask \
+python3 /ABS/PATH/TO/codex-mem/Scripts/codex_mem.py \
+  --root "/ABS/PATH/TO/TARGET_PROJECT" \
+  ask \
   "learn this project: architecture, entrypoint, persistence, risks" \
-  --project demo
+  --project target
 ```
 
 ### Case 2: Daily Q&A (incremental retrieval)
 
 ```bash
-python3 Scripts/codex_mem.py --root . ask "what changed in generation flow" --project demo
+python3 /ABS/PATH/TO/codex-mem/Scripts/codex_mem.py \
+  --root "/ABS/PATH/TO/TARGET_PROJECT" \
+  ask "what changed in generation flow" \
+  --project target
 ```
 
 Strict local routing only:
 
 ```bash
-python3 Scripts/codex_mem.py --root . ask \
+python3 /ABS/PATH/TO/codex-mem/Scripts/codex_mem.py \
+  --root "/ABS/PATH/TO/TARGET_PROJECT" \
+  ask \
   "what changed in generation flow" \
-  --project demo --mapping-fallback off
+  --project target --mapping-fallback off
 ```
 
 ### Case 3: Bug/Incident Triage
 
 ```bash
-python3 Scripts/codex_mem.py --root . ask \
+python3 /ABS/PATH/TO/codex-mem/Scripts/codex_mem.py \
+  --root "/ABS/PATH/TO/TARGET_PROJECT" \
+  ask \
   "triage this regression and provide root cause path" \
-  --project demo
+  --project target
 ```
 
 ### Case 4: Implementation Mode
 
 ```bash
-python3 Scripts/codex_mem.py --root . ask \
+python3 /ABS/PATH/TO/codex-mem/Scripts/codex_mem.py \
+  --root "/ABS/PATH/TO/TARGET_PROJECT" \
+  ask \
   "implement this task with minimal compatibility risk" \
-  --project demo
+  --project target
 ```
 
 ### Case 5: Legacy Prompt Comparison (regression only)
 
 ```bash
-python3 Scripts/codex_mem.py --root . ask \
+python3 /ABS/PATH/TO/codex-mem/Scripts/codex_mem.py \
+  --root "/ABS/PATH/TO/TARGET_PROJECT" \
+  ask \
   "learn this repo architecture and top risks" \
-  --project demo --prompt-style legacy
+  --project target --prompt-style legacy
 ```
 
 ## Reading `ask` Output

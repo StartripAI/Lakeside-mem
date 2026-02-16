@@ -18,6 +18,23 @@ Without memory, Codex workflows degrade over time:
 
 `codex-mem` solves this with local-first lifecycle capture + progressive retrieval + repository grounding.
 
+## Required Target-Project Entrypoint
+
+For cross-repository usage, always run through `codex_mem.py` with an explicit target root and project name.
+
+```bash
+python3 /ABS/PATH/TO/codex-mem/Scripts/codex_mem.py \
+  --root "/ABS/PATH/TO/TARGET_PROJECT" \
+  ask "learn this project: north star, architecture, module map, entrypoint, main flow, persistence, ai generation, risks." \
+  --project target \
+  --mapping-debug
+```
+
+Hard rules:
+- do not run without `--root "/ABS/PATH/TO/TARGET_PROJECT"`
+- do not omit `--project`
+- do not accept non-executable guidance as output
+
 ## What You Get
 
 1. Cross-session memory with SQLite + FTS + deterministic vectors.
@@ -47,8 +64,11 @@ More detail:
 ## 60-Second Start
 
 ```bash
-bash Scripts/codex_mem.sh init --project demo
-bash Scripts/codex_mem.sh ask "learn this repo: architecture, entrypoint, persistence, top risks" --project demo
+python3 /ABS/PATH/TO/codex-mem/Scripts/codex_mem.py \
+  --root "/ABS/PATH/TO/TARGET_PROJECT" \
+  ask "learn this project: north star, architecture, module map, entrypoint, main flow, persistence, ai generation, risks." \
+  --project target \
+  --mapping-debug
 ```
 
 Default `ask` behavior:
@@ -58,7 +78,11 @@ Default `ask` behavior:
 For regression comparison:
 
 ```bash
-python3 Scripts/codex_mem.py --root . ask "same question" --project demo --prompt-style legacy
+python3 /ABS/PATH/TO/codex-mem/Scripts/codex_mem.py \
+  --root "/ABS/PATH/TO/TARGET_PROJECT" \
+  ask "same question" \
+  --project target \
+  --prompt-style legacy
 ```
 
 ## Quick Start
