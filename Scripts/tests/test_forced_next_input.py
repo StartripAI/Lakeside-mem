@@ -74,6 +74,8 @@ class ForcedNextInputTests(unittest.TestCase):
         self.assertIn("codex-mem run-target", str(nxt.get("callable_prompt_zh", "")))
         self.assertIn("run-target", str(nxt.get("callable_prompt_zh", "")))
         self.assertIn("TARGET_ROOT_REQUIRED", str(nxt.get("callable_prompt_zh", "")))
+        self.assertIn("LEARNING_COMPLETE/PARTIAL/INCOMPLETE", str(nxt.get("callable_prompt_zh", "")))
+        self.assertIn("有进展默认 PARTIAL", str(nxt.get("callable_prompt_zh", "")))
         self.assertNotIn("用户", str(nxt.get("callable_prompt_zh", "")))
         self.assertTrue(bool(nxt.get("backend_rules_locked")))
         self.assertIn("MECE 七部分", str(nxt.get("backend_sop_zh", "")))
@@ -82,6 +84,12 @@ class ForcedNextInputTests(unittest.TestCase):
         self.assertIn("覆盖率 >= 90%", str(nxt.get("backend_sop_zh", "")))
         self.assertIn("效率提升 >= 30%", str(nxt.get("backend_sop_zh", "")))
         self.assertIn("优先返回项目用途 + 完成度估计", str(nxt.get("backend_sop_zh", "")))
+        completion_policy = nxt.get("completion_response_policy", {})
+        self.assertEqual(str(completion_policy.get("default_when_progress_exists", "")), "PARTIAL")
+        self.assertEqual(
+            str(completion_policy.get("incomplete_only_when", "")),
+            "severely_insufficient_evidence",
+        )
         forbidden = nxt.get("forbidden_output_patterns", [])
         self.assertIn("non_executable_prompt_only", forbidden)
         self.assertIn("generic_advice_without_codex_mem_call", forbidden)

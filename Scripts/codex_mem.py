@@ -2666,7 +2666,8 @@ def build_forced_next_input(
         "仅在证据严重不足时返回 INCOMPLETE。"
     )
     callable_prompt_zh = (
-        "通过 codex-mem run-target 执行目标项目深度首读并返回结果；自动识别目标项目根目录与项目名，无法识别时返回 TARGET_ROOT_REQUIRED。"
+        "通过 codex-mem run-target 执行目标项目深度首读并返回结果；自动识别目标项目根目录与项目名，无法识别时返回 TARGET_ROOT_REQUIRED；"
+        "完成度按证据返回 LEARNING_COMPLETE/PARTIAL/INCOMPLETE（有进展默认 PARTIAL，仅证据严重不足时 INCOMPLETE）。"
     )
 
     out: Dict[str, object] = {
@@ -2720,6 +2721,10 @@ def build_forced_next_input(
                 "must_read_order": ["docs_first", "code_second"],
                 "must_continue_on_gaps": True,
                 "completion_reporting": "percentage_or_range_with_evidence_basis",
+            },
+            "completion_response_policy": {
+                "default_when_progress_exists": "PARTIAL",
+                "incomplete_only_when": "severely_insufficient_evidence",
             },
             "benchmark_targets": {
                 "coverage_min_pct": 90,
