@@ -53,9 +53,12 @@ class CliE2EForcedNextInputTests(unittest.TestCase):
             self.assertNotIn("command_template_py_zh", next_input)
             self.assertNotIn("command_template_py_en", next_input)
             self.assertEqual(str(next_input.get("callable_prompt_contract", "")), "must_call_codex_mem_only")
+            self.assertEqual(str(next_input.get("execution_contract", "")), "must_execute_when_capable")
             self.assertIn("run-target", str(next_input.get("callable_prompt_zh", "")))
+            self.assertIn("必须立即执行", str(next_input.get("callable_prompt_zh", "")))
             forbidden = next_input.get("forbidden_output_patterns", [])
             self.assertIn("non_executable_prompt_only", forbidden)
+            self.assertIn("claim_not_executed_without_attempt", forbidden)
             self.assertEqual(str(next_input.get("output_if_target_root_missing", "")), "TARGET_ROOT_REQUIRED")
             self.assertIn("TARGET_ROOT_REQUIRED", str(next_input.get("router_prompt_zh", "")))
 
