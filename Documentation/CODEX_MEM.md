@@ -34,6 +34,29 @@ Hard rules:
 - do not omit explicit target root path
 - do not return non-executable guidance
 
+One-click natural-language entry:
+
+```bash
+bash /ABS/PATH/TO/codex-mem/Scripts/codex_mem.sh \
+  run-target-auto "learn this project: north star, architecture, module map, entrypoint, main flow, persistence, ai generation, risks"
+```
+
+When root detection fails, output token is:
+
+```text
+TARGET_ROOT_REQUIRED
+```
+
+Single-model runtime switch (per run):
+
+```bash
+bash /ABS/PATH/TO/codex-mem/Scripts/codex_mem.sh \
+  run-target "/ABS/PATH/TO/TARGET_PROJECT" \
+  --project target \
+  --executor codex \
+  --question "learn this project: architecture, persistence, risks"
+```
+
 ## 3) Initialization
 
 ```bash
@@ -99,6 +122,18 @@ bash Scripts/codex_mem.sh ask "What is the stream update chain from input to per
 - memory shortlist + detail records
 - top-k repository chunks from `repo_knowledge.py`
 - token estimate breakdown
+- graph-lite persisted neighbor priors (`graph_lite_edges` in sqlite)
+- onboarding coverage recovery loop (`--coverage-retry-max`)
+
+Example with executor + recovery controls:
+
+```bash
+bash Scripts/codex_mem.sh run-target "/ABS/PATH/TO/TARGET_PROJECT" \
+  --project target \
+  --executor codex \
+  --question "learn this project: architecture, persistence, risks" \
+  -- --coverage-retry-max 3
+```
 
 ## 7) Runtime Modes (Stable/Beta)
 
@@ -206,3 +241,4 @@ Validation coverage:
 - Local hash-based vectors are lightweight by design, not external embedding APIs
 - Web viewer is local and unauthenticated by default (bind to loopback host)
 - Fused `ask` assumes `Scripts/repo_knowledge.py` is present
+- Executor mode is strictly single-model per run (`none|codex|claude`)

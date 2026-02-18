@@ -69,6 +69,9 @@ Input:
 - `prompt_style` (optional: `compact` or `legacy`)
 - `mapping_fallback` (optional: `auto` or `off`)
 - `mapping_debug` (optional bool)
+- `coverage_retry_max` (optional int)
+- `executor` (optional: `none`, `codex`, `claude`)
+- `executor_timeout_sec` (optional int)
 - `prompt_only` (optional bool)
 
 Output notes:
@@ -76,6 +79,13 @@ Output notes:
 - additional fields:
   - `mapping_decision`
   - `coverage_gate`
+  - `coverage_9_section`
+  - `coverage_recovery`
+  - `evidence_stats`
+  - `executor_mode`
+  - `execution_attempted`
+  - `execution_result`
+  - `execution_guard`
   - `prompt_plan`
   - `prompt_metrics`
   - `effective_params`

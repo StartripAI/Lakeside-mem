@@ -1,0 +1,40 @@
+{
+  "ok": true,
+  "root": "/Users/alfred/projects/codex-mem",
+  "checkpoint": "/Users/alfred/projects/codex-mem/Documentation/benchmarks/runtime_pipeline_checkpoint.json",
+  "stages": [
+    {
+      "name": "prompt_compaction",
+      "skipped": true,
+      "reason": "checkpoint_complete"
+    },
+    {
+      "name": "scenario_savings",
+      "skipped": true,
+      "reason": "checkpoint_complete"
+    },
+    {
+      "name": "marketing_claim",
+      "skipped": true,
+      "reason": "checkpoint_complete"
+    },
+    {
+      "name": "pmf_dashboard",
+      "command": [
+        "python3",
+        "/Users/alfred/projects/codex-mem/Scripts/build_pmf_dashboard.py",
+        "--root",
+        "/Users/alfred/projects/codex-mem",
+        "--out",
+        "/Users/alfred/projects/codex-mem/Documentation/benchmarks/PMF_DASHBOARD.md",
+        "--runtime-report",
+        "/Users/alfred/projects/codex-mem/Documentation/benchmarks/runtime_pipeline_latest.json"
+      ],
+      "return_code": 0,
+      "duration_ms": 32.614,
+      "stdout_tail": "{\"ok\": true, \"out\": \"/Users/alfred/projects/codex-mem/Documentation/benchmarks/PMF_DASHBOARD.md\"}\n",
+      "stderr_tail": ""
+    }
+  ],
+  "comparator": {}
+}

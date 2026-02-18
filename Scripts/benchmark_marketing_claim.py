@@ -199,7 +199,7 @@ def run_benchmark(
             script=script,
             root=root,
             index_dir=index_dir,
-            args=["get-observations", *selected_ids],
+            args=["get-observations", *selected_ids, "--project", project],
         )
         layer3_tokens = int(details_payload.get("token_estimate_total", 0))
     else:
@@ -216,6 +216,8 @@ def run_benchmark(
             args=[
                 "timeline",
                 timeline_anchor,
+                "--project",
+                project,
                 "--before",
                 str(scenario.timeline_before),
                 "--after",
@@ -242,7 +244,7 @@ def run_benchmark(
         script=script,
         root=root,
         index_dir=index_dir,
-        args=["get-observations", *all_ids[: min(len(all_ids), 200)]],
+        args=["get-observations", *all_ids[: min(len(all_ids), 200)], "--project", project],
     )
 
     stage1_times: List[float] = []
@@ -260,7 +262,7 @@ def run_benchmark(
             script=script,
             root=root,
             index_dir=index_dir,
-            args=["get-observations", *all_ids],
+            args=["get-observations", *all_ids, "--project", project],
         )
         full_times.append(elapsed)
 

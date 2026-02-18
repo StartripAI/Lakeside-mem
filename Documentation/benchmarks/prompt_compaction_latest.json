@@ -1,0 +1,39 @@
+{
+  "benchmark": "prompt_compaction_v1",
+  "question": "Learn this project: north star, architecture, module map, entrypoints, main flow, persistence, top risks",
+  "runs": 3,
+  "compact": {
+    "tokens_est_samples": [
+      1508,
+      1508,
+      1508
+    ],
+    "tokens_est_avg": 1508,
+    "time_ms_samples": [
+      532.549,
+      189.865,
+      190.586
+    ],
+    "time_ms_avg": 304.334,
+    "coverage_pass_rate": 1.0
+  },
+  "legacy": {
+    "tokens_est_samples": [
+      3199,
+      3199,
+      3199
+    ],
+    "tokens_est_avg": 3199,
+    "time_ms_samples": [
+      188.763,
+      190.014,
+      190.466
+    ],
+    "time_ms_avg": 189.748,
+    "coverage_pass_rate": 1.0
+  },
+  "savings": {
+    "token_saving_ratio_vs_legacy": 0.5286,
+    "token_saving_percent_vs_legacy": 52.86
+  }
+}

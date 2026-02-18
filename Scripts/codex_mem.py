@@ -34,6 +34,10 @@ from prompt_budgeter import build_prompt_plan
 from prompt_mapper import map_prompt_to_profile
 from prompt_profiles import get_prompt_profile
 from prompt_renderer import render_compact_prompt
+from memory_runtime.critic import evaluate_execution_result
+from memory_runtime.executors import run_executor
+from memory_runtime.planner import build_execution_plan, compile_task_spec, compute_coverage_report
+from memory_runtime.retrieval import build_evidence_items, hybrid_rank_chunks
 
 
 INDEX_VERSION = "1"
@@ -276,6 +280,22 @@ def init_schema(conn: sqlite3.Connection) -> None:
             tags,
             tokenize='unicode61'
         );
+
+        CREATE TABLE IF NOT EXISTS graph_lite_edges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project TEXT NOT NULL,
+            path_a TEXT NOT NULL,
+            path_b TEXT NOT NULL,
+            edge_kind TEXT NOT NULL,
+            weight REAL NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            UNIQUE(project, path_a, path_b, edge_kind)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_graph_lite_edges_project_a
+            ON graph_lite_edges(project, path_a);
+        CREATE INDEX IF NOT EXISTS idx_graph_lite_edges_project_b
+            ON graph_lite_edges(project, path_b);
         """
     )
     ensure_meta_default(conn, "index_version", INDEX_VERSION)
@@ -345,6 +365,143 @@ def set_runtime_config(
         upsert_meta(conn, "beta_endless_mode", "1" if beta_endless_mode else "0")
     conn.commit()
     return get_runtime_config(conn)
+
+
+def extract_graph_lite_edges(chunks: Sequence[Mapping[str, object]]) -> List[Tuple[str, str, str, float]]:
+    rows = [dict(chunk) for chunk in chunks if isinstance(chunk, Mapping)]
+    if len(rows) < 2:
+        return []
+
+    signatures: List[Dict[str, object]] = []
+    for row in rows:
+        path = str(row.get("path", "")).strip()
+        if not path:
+            continue
+        signatures.append(
+            {
+                "path": path,
+                "module": _module_signature(path),
+                "symbol_tokens": set(tokenize(str(row.get("symbol_hint", "")))),
+                "category_tokens": set(tokenize(" ".join(str(v) for v in row.get("categories", [])))),
+            }
+        )
+
+    out: Dict[Tuple[str, str, str], float] = {}
+    for i in range(len(signatures)):
+        for j in range(i + 1, len(signatures)):
+            a = signatures[i]
+            b = signatures[j]
+            path_a = str(a["path"])
+            path_b = str(b["path"])
+            if path_a == path_b:
+                continue
+            pair_a, pair_b = sorted((path_a, path_b))
+
+            module_score = 1.0 if a["module"] == b["module"] and str(a["module"]) else 0.0
+            symbol_score = _set_similarity(a["symbol_tokens"], b["symbol_tokens"])
+            category_score = _set_similarity(a["category_tokens"], b["category_tokens"])
+
+            if module_score > 0:
+                out[(pair_a, pair_b, "module")] = max(out.get((pair_a, pair_b, "module"), 0.0), 0.6)
+            if symbol_score > 0:
+                out[(pair_a, pair_b, "symbol")] = max(out.get((pair_a, pair_b, "symbol"), 0.0), min(0.5, symbol_score))
+            if category_score > 0:
+                out[(pair_a, pair_b, "category")] = max(
+                    out.get((pair_a, pair_b, "category"), 0.0),
+                    min(0.4, category_score),
+                )
+
+    edges = [(a, b, kind, round(weight, 6)) for (a, b, kind), weight in out.items() if weight > 0.0]
+    return edges
+
+
+def upsert_graph_lite_edges(
+    conn: sqlite3.Connection,
+    *,
+    project: str,
+    edges: Sequence[Tuple[str, str, str, float]],
+) -> int:
+    if not edges:
+        return 0
+    ts = now_iso()
+    rows = []
+    for path_a, path_b, edge_kind, weight in edges:
+        a = str(path_a).strip()
+        b = str(path_b).strip()
+        kind = str(edge_kind).strip() or "relation"
+        if not a or not b or a == b:
+            continue
+        wa = float(weight or 0.0)
+        if wa <= 0:
+            continue
+        left, right = sorted((a, b))
+        rows.append((project, left, right, kind, wa, ts))
+    if not rows:
+        return 0
+    conn.executemany(
+        """
+        INSERT INTO graph_lite_edges(project, path_a, path_b, edge_kind, weight, last_seen_at)
+        VALUES(?, ?, ?, ?, ?, ?)
+        ON CONFLICT(project, path_a, path_b, edge_kind)
+        DO UPDATE SET weight=excluded.weight, last_seen_at=excluded.last_seen_at
+        """,
+        rows,
+    )
+    return len(rows)
+
+
+def fetch_graph_lite_neighbor_scores(
+    conn: sqlite3.Connection,
+    *,
+    project: str,
+    paths: Sequence[str],
+) -> Dict[str, float]:
+    cleaned = sorted({str(path).strip() for path in paths if str(path).strip()})
+    if not cleaned:
+        return {}
+    placeholders = ",".join("?" for _ in cleaned)
+    sql = f"""
+        SELECT path_a, path_b, weight
+        FROM graph_lite_edges
+        WHERE project = ?
+          AND (path_a IN ({placeholders}) OR path_b IN ({placeholders}))
+    """
+    params: List[object] = [project, *cleaned, *cleaned]
+    rows = conn.execute(sql, params).fetchall()
+    scores = {path: 0.0 for path in cleaned}
+    clean_set = set(cleaned)
+    for row in rows:
+        path_a = str(row["path_a"])
+        path_b = str(row["path_b"])
+        weight = float(row["weight"] or 0.0)
+        if path_a in clean_set:
+            scores[path_a] += weight
+        if path_b in clean_set:
+            scores[path_b] += weight
+    max_v = max(scores.values()) if scores else 0.0
+    if max_v <= 1e-9:
+        return scores
+    return {path: min(1.0, value / max_v) for path, value in scores.items()}
+
+
+def _module_signature(path: str) -> str:
+    norm = str(path or "").strip().replace("\\", "/")
+    parts = [p for p in norm.split("/") if p]
+    if len(parts) >= 2:
+        dirs = parts[:-1]
+        if dirs:
+            return "/".join(dirs[:2]).lower()
+        return parts[0].lower()
+    return norm.lower()
+
+
+def _set_similarity(a: set[str], b: set[str]) -> float:
+    if not a or not b:
+        return 0.0
+    union = a | b
+    if not union:
+        return 0.0
+    return len(a & b) / len(union)
 
 
 def parse_iso_datetime(value: str) -> dt.datetime:
@@ -2559,6 +2716,84 @@ def ensure_repo_coverage(
     return payload, gate
 
 
+def run_coverage_recovery_loop(
+    *,
+    root: pathlib.Path,
+    question: str,
+    profile_name: str,
+    repo_payload: Mapping[str, object] | object,
+    coverage_gate: Mapping[str, object],
+    code_top_k: int,
+    code_module_limit: int,
+    snippet_chars: int,
+    repo_index_dir: str,
+    max_passes: int,
+) -> Tuple[Dict[str, object], Dict[str, object], List[Dict[str, object]]]:
+    payload = dict(repo_payload) if isinstance(repo_payload, Mapping) else {}
+    gate = dict(coverage_gate) if isinstance(coverage_gate, Mapping) else {"pass": True}
+    recovery_runs: List[Dict[str, object]] = []
+
+    if str(profile_name).strip().lower() != "onboarding":
+        gate["recovery_runs"] = recovery_runs
+        return payload, gate, recovery_runs
+
+    passes = max(0, min(6, int(max_passes)))
+    for idx in range(passes):
+        if bool(gate.get("pass", True)):
+            break
+        missing = gate.get("missing_categories", [])
+        missing_clean = [str(v).strip() for v in missing if str(v).strip()] if isinstance(missing, list) else []
+        if not missing_clean:
+            break
+
+        recovery_q = (
+            f"{question}\n\n"
+            f"Coverage recovery pass {idx + 1}: only fill these categories: {', '.join(missing_clean)}"
+        )
+        probe_payload = run_repo_query(
+            root,
+            question=recovery_q,
+            top_k=max(code_top_k + 2 + idx, 10),
+            module_limit=max(code_module_limit + 2 + idx, 10),
+            snippet_chars=snippet_chars,
+            index_dir=repo_index_dir,
+        )
+        base_chunks = _extract_repo_chunks(payload)
+        probe_chunks = _extract_repo_chunks(probe_payload)
+        merged_chunks = _merge_repo_chunks(
+            base_chunks,
+            probe_chunks,
+            max(code_top_k + code_module_limit + len(base_chunks) + len(probe_chunks), 24),
+        )
+        payload = dict(payload)
+        payload["chunks"] = merged_chunks
+        payload, gate = ensure_repo_coverage(
+            root=root,
+            question=recovery_q,
+            profile_name=profile_name,
+            repo_payload=payload,
+            code_top_k=max(code_top_k + 1, 8),
+            code_module_limit=max(code_module_limit + 1, 8),
+            snippet_chars=snippet_chars,
+            repo_index_dir=repo_index_dir,
+        )
+        recovery_runs.append(
+            {
+                "pass_index": idx + 1,
+                "missing_before": missing_clean,
+                "added_chunk_count": len(probe_chunks),
+                "missing_after": list(gate.get("missing_categories", []))
+                if isinstance(gate.get("missing_categories", []), list)
+                else [],
+                "pass_after": bool(gate.get("pass", False)),
+            }
+        )
+
+    gate = dict(gate)
+    gate["recovery_runs"] = recovery_runs
+    return payload, gate, recovery_runs
+
+
 def _profile_prompt_template(profile_name: str) -> Tuple[str, str]:
     profile = (profile_name or "").strip().lower()
     if profile == "onboarding":
@@ -2808,6 +3043,13 @@ def cmd_ask(args: argparse.Namespace) -> int:
     profile_name = str(mapping_decision.get("profile", "daily_qa"))
     profile = get_prompt_profile(profile_name)
     defaults = profile.defaults
+    task_spec = compile_task_spec(
+        question=args.question,
+        project=args.project,
+        root_abs=str(root),
+        profile=profile.name,
+    )
+    execution_plan = build_execution_plan(task_spec)
 
     search_limit = int(args.search_limit if args.search_limit is not None else defaults.get("search_limit", 20))
     detail_limit = int(args.detail_limit if args.detail_limit is not None else defaults.get("detail_limit", 6))
@@ -2874,6 +3116,54 @@ def cmd_ask(args: argparse.Namespace) -> int:
         snippet_chars=args.snippet_chars,
         repo_index_dir=args.repo_index_dir,
     )
+    repo_payload, coverage_gate, coverage_recovery_runs = run_coverage_recovery_loop(
+        root=root,
+        question=args.question,
+        profile_name=profile.name,
+        repo_payload=repo_payload,
+        coverage_gate=coverage_gate,
+        code_top_k=code_top_k,
+        code_module_limit=code_module_limit,
+        snippet_chars=args.snippet_chars,
+        repo_index_dir=args.repo_index_dir,
+        max_passes=int(getattr(args, "coverage_retry_max", 2)),
+    )
+
+    graph_edges_written = 0
+    graph_neighbor_scores: Dict[str, float] = {}
+
+    if isinstance(repo_payload, Mapping):
+        raw_chunks = repo_payload.get("chunks")
+        if isinstance(raw_chunks, list):
+            raw_paths = [str(chunk.get("path", "")).strip() for chunk in raw_chunks if isinstance(chunk, Mapping)]
+            graph_edges = extract_graph_lite_edges([chunk for chunk in raw_chunks if isinstance(chunk, Mapping)])
+            graph_edges_written = upsert_graph_lite_edges(conn, project=args.project, edges=graph_edges)
+            if graph_edges_written > 0:
+                conn.commit()
+            graph_neighbor_scores = fetch_graph_lite_neighbor_scores(conn, project=args.project, paths=raw_paths)
+            repo_payload = dict(repo_payload)
+            repo_payload["chunks"] = hybrid_rank_chunks(
+                raw_chunks,
+                question=args.question,
+                graph_neighbor_scores=graph_neighbor_scores,
+            )
+
+    repo_chunks = []
+    if isinstance(repo_payload, Mapping):
+        raw_chunks = repo_payload.get("chunks")
+        if isinstance(raw_chunks, list):
+            repo_chunks = [chunk for chunk in raw_chunks if isinstance(chunk, Mapping)]
+
+    evidence_items = build_evidence_items(repo_chunks, root_abs=str(root))
+    coverage_9 = compute_coverage_report(evidence_items, min_evidence_per_section=3, pass_threshold_pct=95.0)
+    coverage_9_view = coverage_9.to_dict()
+    evidence_stats = {
+        "count": len(evidence_items),
+        "sections_hit": sorted({item.section for item in evidence_items if item.section}),
+        "graph_lite_edges_written": int(graph_edges_written),
+        "graph_neighbor_scored_paths": len(graph_neighbor_scores),
+        "coverage_recovery_runs": coverage_recovery_runs,
+    }
 
     memory_l1_tokens = sum(item.token_estimate for item in layer1)
     memory_l3_tokens = sum(int(item["token_estimate"]) for item in details)
@@ -2903,6 +3193,23 @@ def cmd_ask(args: argparse.Namespace) -> int:
             coverage_gate=coverage_gate,
         )
 
+    if args.prompt_only:
+        print(prompt)
+        return 0
+
+    execution_result = run_executor(
+        executor_mode=str(getattr(args, "executor", "none")),
+        prompt=prompt,
+        cwd=str(root),
+        timeout_sec=int(getattr(args, "executor_timeout_sec", 90)),
+    )
+    execution_view = execution_result.to_dict(max_chars=2400)
+    execution_view["critic"] = evaluate_execution_result(
+        execution_view,
+        coverage_gate=coverage_gate if isinstance(coverage_gate, Mapping) else {},
+        coverage_report=coverage_9_view,
+    )
+
     prompt_metrics = {
         "style": args.prompt_style,
         "chars": len(prompt),
@@ -2930,6 +3237,7 @@ def cmd_ask(args: argparse.Namespace) -> int:
             "detail_limit": detail_limit,
             "code_top_k": code_top_k,
             "code_module_limit": code_module_limit,
+            "coverage_retry_max": int(getattr(args, "coverage_retry_max", 2)),
             "alpha": alpha,
             "normalized_query": normalized_query,
             "since": since,
@@ -2963,12 +3271,46 @@ def cmd_ask(args: argparse.Namespace) -> int:
         "prompt_plan": prompt_plan,
         "prompt_metrics": prompt_metrics,
         "suggested_prompt": prompt,
+        "task_spec": task_spec.to_dict(),
+        "execution_plan": execution_plan.to_dict(),
+        "coverage_9_section": coverage_9_view,
+        "evidence_stats": evidence_stats,
+        "coverage_recovery": coverage_recovery_runs,
+        "executor_mode": str(getattr(args, "executor", "none")),
+        "execution_attempted": bool(execution_view.get("attempted")),
+        "execution_result": execution_view,
+        "memory_runtime_layers": [
+            "access_ux",
+            "task_compiler_plan",
+            "memory_ingestion_structuring",
+            "storage_index",
+            "retrieval_ranking",
+            "execution_critic_delivery",
+        ],
         "forced_next_input": build_forced_next_input(
             root=root,
             profile_name=profile.name,
             coverage_gate=coverage_gate,
         ),
     }
+    execution_critic = execution_view.get("critic", {}) if isinstance(execution_view, Mapping) else {}
+    if isinstance(execution_critic, Mapping):
+        recommendation = str(execution_critic.get("recommendation", "continue")).strip()
+        if recommendation and recommendation != "continue":
+            payload["execution_guard"] = dict(execution_critic)
+            if recommendation == "require_human_review":
+                payload["recommended_next_action"] = {
+                    "type": "human_review",
+                    "reason": "execution_risk_gate",
+                    "note": "Execution critic detected risky command patterns; require human review before continuing.",
+                }
+            elif recommendation == "retry_with_narrower_scope":
+                payload["recommended_next_action"] = {
+                    "type": "ask_refine",
+                    "reason": "possible_stuck_loop",
+                    "note": "Executor output suggests a stuck loop; retry with narrower scope and explicit constraints.",
+                    "example_question": f"{args.question}\n\n缩小范围：只处理一个模块并返回可验证证据。",
+                }
     if not bool(coverage_gate.get("pass", True)):
         missing = coverage_gate.get("missing_categories", [])
         missing_text = ", ".join(str(v) for v in missing) if isinstance(missing, list) and missing else "unknown"
@@ -2978,9 +3320,6 @@ def cmd_ask(args: argparse.Namespace) -> int:
             "note": "Prefer another targeted ask query; avoid looping mem-search/timeline on empty memory.",
             "example_question": f"{args.question}\n\n只补齐这些缺失证据类别：{missing_text}",
         }
-    if args.prompt_only:
-        print(prompt)
-        return 0
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
 
@@ -3337,6 +3676,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_ask.add_argument("--prompt-style", choices=["compact", "legacy"], default="compact")
     p_ask.add_argument("--mapping-fallback", choices=["auto", "off"], default="auto")
     p_ask.add_argument("--mapping-debug", action="store_true")
+    p_ask.add_argument(
+        "--coverage-retry-max",
+        type=int,
+        default=2,
+        help="Max automatic coverage recovery passes for onboarding profile.",
+    )
+    p_ask.add_argument(
+        "--executor",
+        choices=["none", "codex", "claude"],
+        default="none",
+        help="Single-model executor mode. `none` keeps ask as retrieval-only.",
+    )
+    p_ask.add_argument(
+        "--executor-timeout-sec",
+        type=int,
+        default=90,
+        help="Timeout for external executor in seconds.",
+    )
     p_ask.add_argument("--prompt-only", action="store_true")
     p_ask.set_defaults(func=cmd_ask)
 

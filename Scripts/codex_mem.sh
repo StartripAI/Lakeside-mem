@@ -19,6 +19,7 @@ usage() {
   cat <<'EOF'
 Usage:
   Scripts/codex_mem.sh run-target <target_root> [--project NAME] [--question Q] [--no-mapping-debug] [-- ask-args...]
+  Scripts/codex_mem.sh run-target-auto "<natural language task>" [--project NAME] [--executor none|codex|claude] [--no-mapping-debug] [-- ask-args...]
   Scripts/codex_mem.sh init [--project NAME]
   Scripts/codex_mem.sh session-start <session_id> [--title T]
   Scripts/codex_mem.sh prompt <session_id> "<user prompt>" [--title T]
@@ -58,23 +59,17 @@ cmd="${1:-help}"
 shift || true
 
 case "${cmd}" in
-  run-target)
+  run-target-auto)
     if [[ $# -lt 1 ]]; then
-      echo "run-target requires <target_root>" >&2
+      echo "run-target-auto requires a natural-language task string" >&2
       usage
       exit 1
     fi
 
-    target_root_raw="${1}"
+    question="${1}"
     shift
-    if [[ ! -d "${target_root_raw}" ]]; then
-      echo "Target root not found: ${target_root_raw}" >&2
-      exit 1
-    fi
-    target_root="$(cd "${target_root_raw}" && pwd)"
-
     project_name=""
-    question='learn this project: north star, architecture, module map, entrypoint, main flow, persistence, ai generation, risks.'
+    executor_mode="none"
     mapping_debug="on"
     ask_args=()
 
@@ -94,6 +89,150 @@ case "${cmd}" in
             exit 1
           fi
           question="$2"
+          shift 2
+          ;;
+        --executor)
+          if [[ $# -lt 2 ]]; then
+            echo "Missing value for --executor" >&2
+            exit 1
+          fi
+          executor_mode="$2"
+          shift 2
+          ;;
+        --no-mapping-debug)
+          mapping_debug="off"
+          shift
+          ;;
+        --mapping-debug)
+          mapping_debug="on"
+          shift
+          ;;
+        --)
+          shift
+          while [[ $# -gt 0 ]]; do
+            ask_args+=("$1")
+            shift
+          done
+          ;;
+        *)
+          ask_args+=("$1")
+          shift
+          ;;
+      esac
+    done
+
+    target_root="$(
+      "${PYTHON_BIN}" - "$question" "$ROOT" <<'PY'
+import os
+import pathlib
+import re
+import sys
+
+question = str(sys.argv[1] if len(sys.argv) > 1 else "")
+codex_mem_root = pathlib.Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else pathlib.Path(".").resolve()
+
+def is_codex_mem_repo_root(path: pathlib.Path) -> bool:
+    return (path / "Scripts" / "codex_mem.py").exists() and (path / "Scripts" / "codex_mem.sh").exists()
+
+path_hits = re.findall(r"(/[^\s\"',;]+)", question)
+for raw in path_hits:
+    raw = raw.rstrip(".,;:!?)]}\"'")
+    try:
+        candidate = pathlib.Path(raw).expanduser().resolve()
+    except Exception:
+        continue
+    if candidate.is_dir() and not is_codex_mem_repo_root(candidate):
+        print(str(candidate))
+        raise SystemExit(0)
+
+for env_name in ("CODEX_TARGET_ROOT", "TARGET_PROJECT_ROOT", "PROJECT_ROOT", "WORKSPACE_ROOT"):
+    raw = os.environ.get(env_name, "").strip()
+    if not raw:
+        continue
+    try:
+        candidate = pathlib.Path(raw).expanduser().resolve()
+    except Exception:
+        continue
+    if candidate.is_dir() and not is_codex_mem_repo_root(candidate):
+        print(str(candidate))
+        raise SystemExit(0)
+
+workspace = pathlib.Path.cwd().resolve()
+if workspace.is_dir() and not is_codex_mem_repo_root(workspace):
+    print(str(workspace))
+    raise SystemExit(0)
+print("")
+PY
+    )"
+
+    if [[ -z "${target_root}" ]]; then
+      echo "TARGET_ROOT_REQUIRED"
+      exit 0
+    fi
+
+    if [[ -z "${project_name}" ]]; then
+      project_name="$(basename "${target_root}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
+      if [[ -z "${project_name}" ]]; then
+        project_name="target"
+      fi
+    fi
+
+    cmdline=("bash" "${BASH_SOURCE[0]}" "run-target" "${target_root}" "--project" "${project_name}" "--question" "${question}" "--executor" "${executor_mode}")
+    if [[ "${mapping_debug}" == "off" ]]; then
+      cmdline+=(--no-mapping-debug)
+    else
+      cmdline+=(--mapping-debug)
+    fi
+    if [[ ${#ask_args[@]} -gt 0 ]]; then
+      cmdline+=(-- "${ask_args[@]}")
+    fi
+    exec "${cmdline[@]}"
+    ;;
+  run-target)
+    if [[ $# -lt 1 ]]; then
+      echo "run-target requires <target_root>" >&2
+      usage
+      exit 1
+    fi
+
+    target_root_raw="${1}"
+    shift
+    if [[ ! -d "${target_root_raw}" ]]; then
+      echo "Target root not found: ${target_root_raw}" >&2
+      exit 1
+    fi
+    target_root="$(cd "${target_root_raw}" && pwd)"
+
+    project_name=""
+    question='learn this project: north star, architecture, module map, entrypoint, main flow, persistence, ai generation, risks.'
+    mapping_debug="on"
+    executor_mode="none"
+    ask_args=()
+
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --project)
+          if [[ $# -lt 2 ]]; then
+            echo "Missing value for --project" >&2
+            exit 1
+          fi
+          project_name="$2"
+          shift 2
+          ;;
+        --question)
+          if [[ $# -lt 2 ]]; then
+            echo "Missing value for --question" >&2
+            exit 1
+          fi
+          question="$2"
+          shift 2
+          ;;
+        --executor)
+          if [[ $# -lt 2 ]]; then
+            echo "Missing value for --executor" >&2
+            exit 1
+          fi
+          executor_mode="$2"
           shift 2
           ;;
         --no-mapping-debug)
@@ -125,7 +264,7 @@ case "${cmd}" in
       fi
     fi
 
-    cmdline=("${PYTHON_BIN}" "${SCRIPT}" --root "${target_root}" ask "${question}" --project "${project_name}")
+    cmdline=("${PYTHON_BIN}" "${SCRIPT}" --root "${target_root}" ask "${question}" --project "${project_name}" --executor "${executor_mode}")
     if [[ "${mapping_debug}" == "on" ]]; then
       cmdline+=(--mapping-debug)
     fi

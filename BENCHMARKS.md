@@ -26,6 +26,18 @@ Marketing metrics benchmark (token + startup):
 python3 Scripts/benchmark_marketing_claim.py --root . --out Documentation/benchmarks/marketing_claims_latest.json
 ```
 
+Standardized runtime pipeline with checkpoint resume + comparator:
+
+```bash
+python3 Scripts/benchmark_runtime_pipeline.py --root . --out Documentation/benchmarks/runtime_pipeline_latest.json
+```
+
+Build PMF dashboard from latest artifacts:
+
+```bash
+python3 Scripts/build_pmf_dashboard.py --root . --out Documentation/benchmarks/PMF_DASHBOARD.md
+```
+
 ## Latest Result Template
 
 | Version | Query Count | Avg Token (search) | Avg Token (mem-search) | Avg Hit Rank (search) | Avg Hit Rank (mem-search) | Avg Jaccard |

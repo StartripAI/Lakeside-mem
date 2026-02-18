@@ -8,6 +8,31 @@
 3. ask orchestration plane (mapping, coverage, budgeting, rendering)
 4. integration plane (MCP + web APIs)
 
+## 6-Layer Runtime (Current PMF Shape)
+
+`codex-mem` now exposes an explicit six-layer runtime contract for developer workflows:
+
+1. `access_ux`
+2. `task_compiler_plan`
+3. `memory_ingestion_structuring`
+4. `storage_index`
+5. `retrieval_ranking`
+6. `execution_critic_delivery`
+
+The output payload from `ask` includes:
+- `task_spec`
+- `execution_plan`
+- `coverage_9_section`
+- `evidence_stats`
+- `executor_mode`
+- `execution_attempted`
+- `execution_result`
+
+Additional runtime safeguards:
+- graph-lite edge persistence (`graph_lite_edges` table) for local neighbor priors
+- onboarding coverage recovery loop (`coverage_retry_max`) before finalizing gate result
+- execution critic guard (`stuck_detected`, `risk_level`, recommendation)
+
 ## Ask Pipeline (Current)
 
 `ask` in `Scripts/codex_mem.py` executes:

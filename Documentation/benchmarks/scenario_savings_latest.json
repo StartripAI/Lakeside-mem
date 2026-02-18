@@ -1,0 +1,274 @@
+{
+  "date": "2026-02-18",
+  "benchmark_script": "Scripts/benchmark_marketing_claim.py",
+  "query": "how did we handle memory retrieval privacy and stream orchestrator issues",
+  "cases": [
+    {
+      "case": "cold_start_lean",
+      "scenario": {
+        "name": "scenario_matrix_v1",
+        "sessions": 2,
+        "tool_events_per_session": 4,
+        "noise_chars": 65,
+        "chunks_per_event": 13,
+        "stage1_limit": 8,
+        "details_limit": 3,
+        "timeline_before": 1,
+        "timeline_after": 1,
+        "startup_samples": 3,
+        "seed": 31
+      },
+      "dataset": {
+        "project": "cold-start-lean",
+        "events": 14,
+        "observations": 8,
+        "total_items": 22
+      },
+      "token": {
+        "naive_full_load": 2846,
+        "progressive_load": 1025,
+        "layer1_tokens": 52,
+        "layer2_timeline_tokens": 0,
+        "layer3_detail_tokens": 973,
+        "saving_ratio": 0.6398,
+        "saving_percent": 63.98
+      },
+      "startup_ms": {
+        "stage1_time_to_first_context_samples": [
+          80.039,
+          78.959,
+          80.23
+        ],
+        "full_history_load_samples": [
+          79.356,
+          82.576,
+          98.599
+        ],
+        "stage1_median": 80.039,
+        "full_history_median": 82.576,
+        "speedup_x": 1.032
+      },
+      "query": {
+        "text": "how did we handle memory retrieval privacy and stream orchestrator issues",
+        "timeline_anchor": "E4"
+      }
+    },
+    {
+      "case": "cold_start_deeper_context",
+      "scenario": {
+        "name": "scenario_matrix_v1",
+        "sessions": 3,
+        "tool_events_per_session": 10,
+        "noise_chars": 65,
+        "chunks_per_event": 13,
+        "stage1_limit": 12,
+        "details_limit": 8,
+        "timeline_before": 3,
+        "timeline_after": 3,
+        "startup_samples": 3,
+        "seed": 41
+      },
+      "dataset": {
+        "project": "cold-start-deep",
+        "events": 39,
+        "observations": 12,
+        "total_items": 51
+      },
+      "token": {
+        "naive_full_load": 10129,
+        "progressive_load": 2773,
+        "layer1_tokens": 72,
+        "layer2_timeline_tokens": 98,
+        "layer3_detail_tokens": 2603,
+        "saving_ratio": 0.7262,
+        "saving_percent": 72.62
+      },
+      "startup_ms": {
+        "stage1_time_to_first_context_samples": [
+          77.231,
+          79.212,
+          78.101
+        ],
+        "full_history_load_samples": [
+          80.392,
+          76.564,
+          79.158
+        ],
+        "stage1_median": 78.101,
+        "full_history_median": 79.158,
+        "speedup_x": 1.014
+      },
+      "query": {
+        "text": "how did we handle memory retrieval privacy and stream orchestrator issues",
+        "timeline_anchor": "E36"
+      }
+    },
+    {
+      "case": "daily_qa_standard",
+      "scenario": {
+        "name": "scenario_matrix_v1",
+        "sessions": 30,
+        "tool_events_per_session": 38,
+        "noise_chars": 65,
+        "chunks_per_event": 13,
+        "stage1_limit": 20,
+        "details_limit": 8,
+        "timeline_before": 4,
+        "timeline_after": 4,
+        "startup_samples": 5,
+        "seed": 19
+      },
+      "dataset": {
+        "project": "daily-standard",
+        "events": 1230,
+        "observations": 120,
+        "total_items": 1350
+      },
+      "token": {
+        "naive_full_load": 379275,
+        "progressive_load": 596,
+        "layer1_tokens": 200,
+        "layer2_timeline_tokens": 260,
+        "layer3_detail_tokens": 136,
+        "saving_ratio": 0.9984,
+        "saving_percent": 99.84
+      },
+      "startup_ms": {
+        "stage1_time_to_first_context_samples": [
+          79.769,
+          79.096,
+          78.331,
+          81.654,
+          79.056
+        ],
+        "full_history_load_samples": [
+          99.042,
+          100.041,
+          98.128,
+          97.76,
+          98.33
+        ],
+        "stage1_median": 79.096,
+        "full_history_median": 98.33,
+        "speedup_x": 1.243
+      },
+      "query": {
+        "text": "how did we handle memory retrieval privacy and stream orchestrator issues",
+        "timeline_anchor": "O68"
+      }
+    },
+    {
+      "case": "daily_qa_deep_retrieval",
+      "scenario": {
+        "name": "scenario_matrix_v1",
+        "sessions": 30,
+        "tool_events_per_session": 38,
+        "noise_chars": 65,
+        "chunks_per_event": 13,
+        "stage1_limit": 30,
+        "details_limit": 20,
+        "timeline_before": 8,
+        "timeline_after": 8,
+        "startup_samples": 5,
+        "seed": 23
+      },
+      "dataset": {
+        "project": "daily-deep",
+        "events": 1230,
+        "observations": 120,
+        "total_items": 1350
+      },
+      "token": {
+        "naive_full_load": 379302,
+        "progressive_load": 1178,
+        "layer1_tokens": 318,
+        "layer2_timeline_tokens": 520,
+        "layer3_detail_tokens": 340,
+        "saving_ratio": 0.9969,
+        "saving_percent": 99.69
+      },
+      "startup_ms": {
+        "stage1_time_to_first_context_samples": [
+          81.16,
+          80.558,
+          85.003,
+          87.506,
+          88.641
+        ],
+        "full_history_load_samples": [
+          104.88,
+          100.917,
+          101.775,
+          102.075,
+          101.142
+        ],
+        "stage1_median": 85.003,
+        "full_history_median": 101.775,
+        "speedup_x": 1.197
+      },
+      "query": {
+        "text": "how did we handle memory retrieval privacy and stream orchestrator issues",
+        "timeline_anchor": "O68"
+      }
+    },
+    {
+      "case": "incident_forensics_wide_detail_pull",
+      "scenario": {
+        "name": "scenario_matrix_v1",
+        "sessions": 30,
+        "tool_events_per_session": 38,
+        "noise_chars": 65,
+        "chunks_per_event": 13,
+        "stage1_limit": 120,
+        "details_limit": 120,
+        "timeline_before": 20,
+        "timeline_after": 20,
+        "startup_samples": 5,
+        "seed": 29
+      },
+      "dataset": {
+        "project": "incident-forensics",
+        "events": 1230,
+        "observations": 120,
+        "total_items": 1350
+      },
+      "token": {
+        "naive_full_load": 379251,
+        "progressive_load": 42174,
+        "layer1_tokens": 838,
+        "layer2_timeline_tokens": 1657,
+        "layer3_detail_tokens": 39679,
+        "saving_ratio": 0.8888,
+        "saving_percent": 88.88
+      },
+      "startup_ms": {
+        "stage1_time_to_first_context_samples": [
+          85.556,
+          85.641,
+          87.161,
+          86.129,
+          85.551
+        ],
+        "full_history_load_samples": [
+          105.345,
+          116.297,
+          110.962,
+          107.796,
+          111.665
+        ],
+        "stage1_median": 85.641,
+        "full_history_median": 110.962,
+        "speedup_x": 1.296
+      },
+      "query": {
+        "text": "how did we handle memory retrieval privacy and stream orchestrator issues",
+        "timeline_anchor": "E1056"
+      }
+    }
+  ],
+  "notes": [
+    "Each case generates its own synthetic memory dataset via codex-mem lifecycle hooks for reproducibility.",
+    "Token counts are estimates using the same chars/4 heuristic codex-mem uses in CLI outputs.",
+    "Startup is local CLI time-to-first-context (Layer-1 search median) vs full-history load median."
+  ]
+}
