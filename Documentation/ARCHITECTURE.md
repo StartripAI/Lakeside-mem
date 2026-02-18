@@ -2,7 +2,7 @@
 
 ## System Overview
 
-`dev-mem` is a local-first memory system with four planes:
+`Lakeside-mem` is a local-first memory system with four planes:
 1. capture plane (lifecycle write path)
 2. retrieval plane (search/timeline/get-observations)
 3. ask orchestration plane (mapping, coverage, budgeting, rendering)
@@ -10,7 +10,7 @@
 
 ## 6-Layer Runtime (Current PMF Shape)
 
-`dev-mem` now exposes an explicit six-layer runtime contract for developer workflows:
+`Lakeside-mem` now exposes an explicit six-layer runtime contract for developer workflows:
 
 1. `access_ux`
 2. `task_compiler_plan`

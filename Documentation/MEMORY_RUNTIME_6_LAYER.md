@@ -1,6 +1,6 @@
 # 6-Layer Memory Runtime
 
-`dev-mem` is implemented as a developer memory runtime with strict layer contracts.
+`Lakeside-mem` is implemented as a developer memory runtime with strict layer contracts.
 
 ## Layer Contracts
 

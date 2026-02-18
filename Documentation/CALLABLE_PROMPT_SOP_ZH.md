@@ -2,13 +2,13 @@
 
 ## North Star
 
-- Use `dev-mem` as the only execution entrypoint for target-project deep onboarding.
+- Use `Lakeside-mem` as the only execution entrypoint for target-project deep onboarding.
 - Produce a single-pass, high-completeness project understanding report grounded in file/symbol evidence.
 
 ## Entrypoint (Hard-Locked)
 
 ```bash
-bash /ABS/PATH/TO/dev-mem/Scripts/dev_mem.sh run-target "<TARGET_ROOT_ABS>" --project "<PROJECT_SLUG>" --question "<TASK>"
+bash /ABS/PATH/TO/lakeside-mem/Scripts/lakeside_mem.sh run-target "<TARGET_ROOT_ABS>" --project "<PROJECT_SLUG>" --question "<TASK>"
 ```
 
 ## Root + Project Resolution
