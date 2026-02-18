@@ -65,10 +65,10 @@ def format_primary_hook(version: str, metrics: Dict[str, Any]) -> str:
     red = metrics.get("onboarding_context_reduction_percent")
     if isinstance(cold, (int, float)) and isinstance(warm, (int, float)) and isinstance(red, (int, float)) and red > 0:
         return (
-            f"codex-mem {version}: ~{int(round(cold))}ms cold project grounding / "
+            f"Lakeside-mem {version}: ~{int(round(cold))}ms cold project grounding / "
             f"~{int(round(warm))}ms warm, {red:.2f}% smaller onboarding context."
         )
-    return f"codex-mem {version} is live: Codex-native persistent memory + progressive retrieval."
+    return f"Lakeside-mem {version} is live: Codex-native persistent memory + progressive retrieval."
 
 
 def build_x_copy(version: str, highlights: List[str], url: str, metrics: Dict[str, Any]) -> str:
@@ -115,9 +115,9 @@ def build_reddit_copy(version: str, highlights: List[str], url: str, metrics: Di
 
 
 def build_ph_copy(version: str, highlights: List[str], url: str, metrics: Dict[str, Any]) -> str:
-    tagline = format_primary_hook(version, metrics).replace(f"codex-mem {version}: ", "")
+    tagline = format_primary_hook(version, metrics).replace(f"Lakeside-mem {version}: ", "")
     one_liner = (
-        "codex-mem helps Codex keep context across sessions, retrieve only relevant history, "
+        "Lakeside-mem helps Codex keep context across sessions, retrieve only relevant history, "
         "and package your product story with reusable GIF/screenshot assets."
     )
     feature_lines = "\n".join([f"- {h}" for h in highlights[:6]])
@@ -133,7 +133,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Generate social copy pack for release")
     parser.add_argument("--root", default=".")
     parser.add_argument("--version", required=True, help="Release version label, e.g. v0.2.0")
-    parser.add_argument("--repo-url", default="https://github.com/<YOUR_ORG_OR_USER>/codex-mem")
+    parser.add_argument("--repo-url", default="https://github.com/<YOUR_ORG_OR_USER>/Lakeside-mem")
     parser.add_argument("--release-notes", default="RELEASE_NOTES.md")
     parser.add_argument(
         "--metrics-onboarding-pack",
